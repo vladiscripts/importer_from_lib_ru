@@ -2,3 +2,4 @@ sqlalchemy
 pymysql
 sqlalchemy_utils
 dataset
+itemloaders

@@ -2,9 +2,10 @@
 import scrapy
 from scrapy.spiders import CrawlSpider, Rule
 from scrapy.linkextractors import LinkExtractor
+from itemloaders.processors import TakeFirst, MapCompose, Join, Compose
+from scrapy.loader import ItemLoader
 from scrapy.selector import Selector
-from lib_ru.items import ScrapyItem as Item
-from scrapy.loader.processors import Join, MapCompose, Identity
+from lib_ru.items import *
 from urllib.parse import urlsplit, parse_qs, parse_qsl, unquote, quote, urljoin, urlencode, quote_plus
 import requests
 import json
@@ -25,136 +26,167 @@ import os
 from pathlib import Path
 from typing import Union
 import re
-import dataset
-from threading import RLock
+from bs4 import BeautifulSoup, Comment
+import mwparserfromhell as mwp
 
-uniques_p = set()
-uniques_e = set()
+from db import *
+
+def selector_from_html5(response):
+    response = response.replace(encoding='utf-8',
+                                # body=str(BeautifulSoup(response.body, 'html.parser', from_encoding='cp1251')))
+                                body=str(BeautifulSoup(response.body, 'html5lib', from_encoding='cp1251')))
+    return response
 
 
-class ScrapySpider(CrawlSpider):
-    name = "getfiles"
-    # allowed_domains = ['tolstoy.ru']
+class AuthorsSpider(CrawlSpider):
+    name = "get_all"
+    allow_domains = ['az.lib.ru']
     start_urls = [
-        'http://tolstoy.ru/creativity/90-volume-collection-of-the-works/',
+        # 'http://az.lib.ru/a/',
+        # 'http://az.lib.ru/a/ashhacawa_s_m/',
+        # 'http://az.lib.ru/h/hartulari_k_f/',
+        # 'http://az.lib.ru/l/litoshenko_l_n/',
+        # 'http://az.lib.ru/m/munshtejn_l_g/',
+        # 'http://az.lib.ru/c/chukowskij_k_i',
+        'http://az.lib.ru/c/chukowskij_k_i/text_1913_poezia_budushego.shtml',
     ]
+
     rules = (
-        Rule(LinkExtractor(allow=r'90-volume-collection-of-the-works/\d+/', restrict_css="section.content",
-                           # deny='#map', restrict_xpaths="//section[@id='paginadoListado']
-                           ), callback='parse_item'),
-        Rule(LinkExtractor(restrict_css="div.pagination", unique=False),
-             process_links='filter_url_dubles_cat', follow=True),
-        Rule(LinkExtractor(restrict_css='a[data-name="ViewLink"]'),
-             process_links='filter_url_dubles_e', callback='parse_item'),
+        Rule(LinkExtractor(restrict_xpaths='//a[.="А"]/following-sibling::a|//a[.="Я"]/preceding-sibling::a',
+                           unique=False), follow=True),
+        Rule(LinkExtractor(restrict_xpaths='//dl/a|a[.="Связаться с программистом сайта"]/preceding::a'),
+             callback='parse_item'),
     )
 
+    def parse_start_url(self, response):
+        """ to testing of scraping of a page """
+        filepath = 'text.html'
+        Path(filepath).write_text(response.text, encoding=response.encoding)
+        html = Path(filepath).read_text(encoding=response.encoding)
 
-def filter_url_dubles_e(self, items):
-    items_new = []
-    for l in items:
-        eid = l.url.split('/')[-1]
-        if not eid in uniques_e:
-            uniques_e.add(eid)
-            if not self.db_table.find_one(url_id=eid):
-                items_new.append(l)
-    return items_new
+        from scrapy.http import HtmlResponse
+        r = HtmlResponse(url="my HTML string", body=html, encoding=response.encoding)
+        r = selector_from_html5(response)
 
-
-def filter_url_dubles_cat(self, items):
-    items_new = []
-    for l in items:
-        p = int(parse_qs(l.url)['p'][0])
-        if not p in uniques_p:
-            uniques_p.add(p)
-            items_new.append(l)
-    return items_new
-
-    # def __init__(self, *args, **kwargs):
-    #     super().__init__(*args, **kwargs)
-    #     spider.db = dataset.connect('sqlite:///db.sqlite', engine_kwargs=dict(echo=False))
-    #     spider.db_input = spider.db['open_pubs']
-    #     spider.db_table = spider.db['signalchecker']
-    #     spider.db_lock = RLock()
-
-    # def start_requests(self):
-    # 	urls = ['',]
-    # 	for url in urls:
-    # 		yield scrapy.Request(url, callback=self.parse)
-
-
-def start_requests(self):
-    db_numbers = [(r['id'], r['postcode']) for r in self.db_input.find()]
-    # db_downloaded_numbers = [int(r['pid']) for r in self.db_table.find()]
-    # numbers = [(pid, code.replace(' ', '')) for pid, code in db_numbers if pid not in db_downloaded_numbers]
-    numbers = db_numbers
-    # for pid, code in [['4623', 'NR17 1AY']]:
-    for pid, code in numbers:
-        # if n != '01543721': continue
-        yield scrapy.Request(f'{self.url}?postcode={code}', callback=self.parse_item,
-                             # errback=self.err,
-                             meta={'pid': pid, 'code': code,
-                                   # 'proxy': 'http://127.0.0.1:8118'
-                                   },
-                             dont_filter=True)
+        yield item
 
     def parse_item(self, response):
-        i = Item()
+        response = selector_from_html5(response)
+        l = AuthorLoader(AuthorItem(), response)
 
-        i['url'] = response.url
-        content = response.css('section.content')
-        i['vol_label'] = content.css('h1 ::text').extract_first()
-        i['vol_title'] = ' / '.join(content.css('p.tit ::text').extract())
-        urlfiles_list = [urljoin(response.url, url) for url in content.css('ul.download_c2 a::attr(href)').extract()]
-        for link in urlfiles_list:
-            i['pdf'] = link if 'pdf' in link else ''
-            i['epub'] = link if 'epub' in link else ''
-            i['fb2'] = link if 'fb2' in link else ''
-            i['mobi'] = link if 'mobi' in link else ''
+        author_slug = urlsplit(response.url).path.rstrip('/')
+        l.add_value('slug', author_slug)
 
-    # yield scrapy.Request(self.url_base + url_recent_report, meta={'item': i}, callback=self.parse_report_page)
+        # l.add_css('author_name', 'h2::text', re=r':\s*(.*?)\s*:')
+        author_name = response.css('h2::text').re_first(r':\s*(.*?)\s*:')
+        l.add_value('name', author_name)
+        family, _, names = author_name.partition(' ')
+        # l.add_value('name_parsed_for_WS', f'{names} {family}')
+        l.add_value('family_parsed_for_WS', family)
+        l.add_value('names_parsed_for_WS', names)
 
-    i = strip_strs(i)
+        # import w3lib.html
+        # w3lib.html.remove_tags('a')
+        # l.add_xpath('names_parsed_for_WS', '//li//*[contains(.,"Даты жизни:")]/ancestor::li', lambda x: w3lib.html.remove_tags(x, which_ones=('b')))
+        # table_desc = l.nested_xpath('//li//*[contains(.,"Даты жизни:")]/ancestor::li')
+        # table_desc = l.nested_xpath('//dd/table')
+        table_desc = l.nested_xpath('//table//li/..')
+        # table_desc = table_desc.nested_xpath('//li//*[contains(.,"Даты жизни:")]/ancestor::td')
+        # table_desc.add_css('live_time', 'li ::text', MapCompose(lambda x: re.sub(r'\s', '', x), dashes))
+        # h =table_desc.selector.xpath('li[contains(.,"Даты жизни:")]//following-sibling::text()').get()
+        # h = table_desc.selector.xpath(x % 'Где жил(а):').get()
+        x = 'li[contains(.,"%s")]//following-sibling::text()'
 
-    with spider.db_lock:
-        spider.db_table.insert_ignore(item, ['pid', 'provider'], ensure=True, keys=['pid'])
+        # table_desc.add_xpath('live_time', x % 'Даты жизни:', TakeFirst(), lambda x: x.replace('/', '.'), dashes, spaces)
+        table_desc.add_xpath('live_time', x % 'Даты жизни:', TakeFirst(), lambda x: x.replace('/', '.'))
+        table_desc.add_xpath('town', x % 'Где жил(а):', TakeFirst(),
+                             lambda x: '; '.join(s.strip(' ,') for s in x.strip().split(';') if s != ''))
+        table_desc.add_xpath('litarea', 'li[contains(.,"%s")]//a/text()' % 'Принадлежность:')
 
-    yield i
+        # todo
+
+        # works = l.nested_xpath('//dt/li/a[starts-with(@href, "text_")]/ancestor::li')
+        # works = response.css('h2::text').re_first(r':\s*(.*?)\s*:')
+        # works = [dict(
+        #     slug=w.css('a ::attr(href)').get(),  # 'a[href^="text_"] ::attr(href)'
+        #     title=w.css('a ::text').get(),
+        #     desc=w.css('dd ::text').get(),
+        #     oo=bool(w.xpath('b[contains(.,"Ѣ")]').get()),
+        #     size=w.css('b ::text').re_first(r'(\d)k'),
+        #     year=w.css('small ::text').re_first(r'\[(.*?)\]')
+        # ) for w in response.xpath('//dt/li/a[starts-with(@href, "text_")]/ancestor::li')]
+
+        # yield from self.get_texts_metadata(response, author_slug)
+        l.add_value('works', self.get_texts_metadata(response))
+
+        # work.selector[0].css('h2::text').re_first(r':\s*(.*?)\s*:')
+        # works.selector[0].css('a ::text').get()
+        # l.add_css('slug', 'a ::attr(href)')  # 'a[href^="text_"] ::attr(href)'
+        # l.add_css('title', 'a ::text')
+        # l.add_css('desc', 'dd ::text')
+        # l.add_xpath('oo', 'b[contains(.,"Ѣ")]', bool)
+        # l.add_css('size', 'b ::text', TakeFirst(), re=r'\dk')
+        # l.add_css('year', 'small ::text', TakeFirst(), re=r'\[(.*?)\]')
+        # l.add_value('works', [d[0].__dict__ for d in works])
+        # l.add_value('works', tuple(d.__dict__ for d in works))
+        # l.add_value('works', works)
+
+        yield l.load_item()
+
+        yield response.follow(response.url + 'about.shtml', callback=self.parse_about_page,
+                              cb_kwargs={'author_slug': author_slug})
+
+    def get_texts_metadata(self, response):
+        t = [dict(
+            slug=w.css('a ::attr(href)').get(),  # 'a[href^="text_"] ::attr(href)'
+            title=w.css('a ::text').get(),
+            desc=''.join(w.css('dd').getall()),
+            oo=bool(w.xpath('b[contains(.,"Ѣ")]').get()),
+            size=w.css('b ::text').re_first(r'(\d+)k'),
+            year=w.css('small ::text').re_first(r'\[(.*?)\]')
+        ) for w in response.xpath('//dt/li/a[starts-with(@href, "text_")]/ancestor::li')]
+        return t
+
+    def parse_about_page(self, response, author_slug):
+        response = selector_from_html5(response)
+        g = AuthorAboutLoader(AuthorAboutItem(), response)
+        g.add_value('author_slug', author_slug)
+        main_block = g.nested_xpath('//noindex[1]')
+        main_block.add_css('image_url',
+                           'img ::attr(src)')  # todo: записываются в базу сторонние ссылки, проверить на /a/adamowich_j_a
+        main_block.add_css('desc', 'dd', re=r'^(?:\s|--)*(.*?)\s*$')
+        yield g.load_item()
+
+    # def parse_json(self, response):
+    #	i = Item()
+    #	j = json.loads(response.text)
+    #	u = response.url
+    # i['id'] = place.get('id')
+
+    # сбор атрибутов с html - названий полей
+    # response.css('div.clinic div').css('::attr(class)').extract()
+
+    # создание списка полей
+    # keys = j[0]['Physicians'][0].keys()
+    # for k in keys:
+    #     print(f'{k} = Field()')
+    # for k in keys:
+    #     print(f"i['{k}'] = d['{k}']")
 
 
-def parse_report_page(self, r):
-    i = r.meta.get('item')
-    yield i
-
-
-# def parse_json(self, response):
-#	i = Item()
-#	j = json.loads(response.text)
-#	u = response.url
-# i['id'] = place.get('id')
-
-# сбор атрибутов с html - названий полей
-# response.css('div.clinic div').css('::attr(class)').extract()
-
-# создание списка полей
-# keys = j[0]['Physicians'][0].keys()
-# for k in keys:
-#     print(f'{k} = Field()')
-# for k in keys:
-#     print(f"i['{k}'] = d['{k}']")
-
-class AncienthomeItem(PortiaItem):
-    text = scrapy.Field(
-        input_processor=Identity(),
-        output_processor=Join(),
-    )
-    title = scrapy.Field(
-        input_processor=Text(),
-        output_processor=Join(),
-    )
-    dict_label = scrapy.Field(
-        input_processor=Text(),
-        output_processor=Join(),
-    )
+# class AncienthomeItem(PortiaItem):
+#     text = scrapy.Field(
+#         input_processor=Identity(),
+#         output_processor=Join(),
+#     )
+#     title = scrapy.Field(
+#         input_processor=Text(),
+#         output_processor=Join(),
+#     )
+#     dict_label = scrapy.Field(
+#         input_processor=Text(),
+#         output_processor=Join(),
+#     )
 
 
 def strip_strs(item: Union[scrapy.Item, dict]):
