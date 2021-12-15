@@ -10,18 +10,21 @@ def selector_from_html5(response):
     return response
 
 
-def get_html():
+def get_html(tid=None):
     # filepath = 'text_old_orph.html'
     # html = Path(filepath).read_text(encoding='cp1251')
 
     # s = BeautifulSoup('''<dd> <div class="bold center"> <i>Первая <b>публикация</b>: </i></div><div class="a"> <i>"Русское слово" / 5 июля 1913 г.</i><i></i>
     # </div></dd>''', 'html5lib')
 
-    # r = db_all_tables.find_one(tid=5643)  # Ашар Амедей. В огонь и в воду. ДО
-    # r = db_all_tables.find_one(tid=210)  # Ашар Амедей. В огонь и в воду. ДО
-    # r = db_all_tables.find_one(tid=429)  # Ашар Амедей. В огонь и в воду. ДО
-    # r = db_all_tables.find_one(tid=155)  # Ашар Амедей. В огонь и в воду. ДО
-    r = db_all_tables.find_one(tid=6734)  # <pre>
+    if not tid:
+        # tid = 5643
+        # tid = 210
+        # tid = 429
+        tid = 6734  # <pre>
+        # tid = 155
+
+    r = db_all_tables.find_one(tid=tid)
     # html = r['content']
     html = r['html']
     global text_url
@@ -31,25 +34,7 @@ def get_html():
     #     #
     #     # wiki =
     #     db_wiki.insert({'tid': r['tid'], 'wiki': wiki}, ensure=True)
-    return html
-
-
-def make_soup(html):
-    soup_html = BeautifulSoup(html, 'html5lib')
-    begin = soup_html.find(text=lambda x: isinstance(x, Comment) and 'Собственно произведение' in x)
-    parent_tag = begin.parent
-    begin.extract()
-
-    end = parent_tag.find(text=lambda x: isinstance(x, Comment) and '-------------------------------------------' in x)
-    ends = list(end.find_all_next())
-    end.extract()
-    for e in ends:
-        if isinstance(e, NavigableString):
-            e.extract()
-        else:
-            e.decompose()
-    soup = BeautifulSoup(str(parent_tag), 'html5lib')
-    return soup
+    return tid, html, text_url
 
 
 def db_write_content_html():

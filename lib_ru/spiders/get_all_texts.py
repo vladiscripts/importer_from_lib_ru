@@ -31,6 +31,7 @@ from bs4 import BeautifulSoup, Comment
 
 from db import *
 
+
 def selector_from_html5(response):
     response = response.replace(
         encoding='utf-8',
@@ -56,6 +57,7 @@ class AuthorsSpider(CrawlSpider):
     # )
 
     def _parse_start_url(self, response):
+        # def parse_start_url(self, response):
         """ to testing of scraping of a page """
         filepath = 'text.html'
         Path(filepath).write_text(response.text, encoding=response.encoding)
@@ -110,14 +112,12 @@ class AuthorsSpider(CrawlSpider):
             tag.append(tags_mapping['b'])
             tag.attrs['class'].remove('bold')
 
-
         def wikify_tag(tag, replacement):
             tag.insert(0, replacement)
             tag.append(replacement)
             tag.unwrap()
 
         wikify_tag(z, "''")
-
 
         text.replace('&#1122;', 'Ѣ')
         text.replace('&#1123;', 'ѣ')
@@ -175,12 +175,14 @@ class AuthorsSpider(CrawlSpider):
         yield item
 
     def start_requests(self):
-        db_titles = self.crawler.db_titles
-        for a in self.crawler.db_authors.all():
-            col = db_titles.table.c.html
-            for t in db_titles.find(col.is_(None), author_id=a['id']):
-                yield scrapy.Request(f"http://az.lib.ru{a['slug']}/{t['slug']}", callback=self.parse_save_html,
-                                     cb_kwargs={'tid': t['id']})
+        t = {'url': 'http://az.lib.ru/d/dikkens_c/text_0110oldorfo.shtml', 'id': 29468}
+        yield scrapy.Request(t['url'], callback=self.save_html_to_db, cb_kwargs={'tid': t['id']})
+
+        # for a in db_authors.all():
+        #     col = db_all_tables.table.c.html
+        #     for t in db_all_tables.find(col.is_(None), author_id=a['id']):
+        #         yield scrapy.Request(f"http://az.lib.ru{a['slug']}/{t['slug']}", callback=self.save_html_to_db,
+        #                              cb_kwargs={'tid': t['id']})
 
     # def parse_start_url(self, response):
     def parse_item(self, response, slug):
@@ -212,13 +214,12 @@ class AuthorsSpider(CrawlSpider):
         # i['html'] = content
         # i['html'] = response.text
 
-        db_titles = self.crawler.db_titles
-        db_titles.update({'slug': slug, 'html': response.text}, ['slug'], ensure=True)
+        db_htmls.update({'slug': slug, 'html': response.text}, ['slug'], ensure=True)
 
         yield i
 
     # def parse_start_url(self, response):
-    def parse_save_html(self, response, tid):
+    def save_html_to_db(self, response, tid):
 
         # filepath = 'text.html'
         # Path(filepath).write_text(response.text, encoding=response.encoding)
@@ -247,8 +248,8 @@ class AuthorsSpider(CrawlSpider):
         # i['html'] = content
         # i['html'] = response.text
 
-        t = self.crawler.db_htmls
-        t.insert({'tid': tid, 'html': response.text}, ensure=True)
+        # db_htmls.upsert({'tid': tid, 'html': response.text}, ['tid'], ensure=True)
+        db_htmls.insert({'tid': tid, 'html': response.text}, ensure=True)
 
         yield i
 
