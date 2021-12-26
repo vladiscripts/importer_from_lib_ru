@@ -18,6 +18,11 @@ class LibRu(HtmltoWikiBase):
 
     def make_soup(self, html):
         self.html_origin = html
+        self.soup = BeautifulSoup(html, 'html5lib')
+
+    def make_soup_via_parser(self, html):
+        self.html_origin = html
+
         soup = BeautifulSoup(html, 'html5lib')
         begin = soup.find(text=lambda x: isinstance(x, Comment) and 'Собственно произведение' in x)
         parent_tag = begin.parent
@@ -76,13 +81,16 @@ class LibRu(HtmltoWikiBase):
 
         for e in soup.find_all('a'):
             if link := e.attrs.get('href'):
-                if link == e.text or 'smalt.karelia.ru' in link:
+                if link == 'http://az.lib.ru' and link == e.text:
+                    e.extract()
+                elif link == e.text or 'smalt.karelia.ru' in link:
                     e.unwrap()
 
 
 
         unwrap_tag(soup, 'font', None, attr_value_exactly=True)
         unwrap_empty_inline_tags(soup, additinals_tags=['blockquote'])
+
 
         # комментарии
         # for c in soup.find_all(text=lambda x: isinstance(x, Comment) and 'Собственно произведение' in x):
@@ -141,8 +149,8 @@ class LibRu(HtmltoWikiBase):
 
         # Если на странице нет h2 или h3, то менять h4 на h3
         h2s = list(soup.find_all('h2'))
-        h3s = list(soup.find_all('h2'))
-        h4s = list(soup.find_all('h2'))
+        h3s = list(soup.find_all('h3'))
+        h4s = list(soup.find_all('h4'))
         if h4s and not h2s and not h3s:
             for h in h4s:
                 h.name = 'h3'
@@ -162,19 +170,6 @@ class LibRu(HtmltoWikiBase):
         p_in_headers(soup)
 
 
-def categorization(text, soup):
-    conditions = [
-        ('[#' in text, 'Страницы с внутренними ссылками по анкорам'),
-        ('pre' in text, 'Страницы с тегами pre'),
-        ('<ref' in text, 'Страницы со сносками'),
-        ('http' in text, 'Страницы с внешними ссылками'),
-        ([e for pre in soup.find_all('pre') for e in pre.find_all('ref')], 'Теги ref внутри pre'),
-    ]
-    for cond, name in conditions:
-        if cond:
-            text = f'{text}\n[[Категория:Импорт/lib.ru/{name}]]'
-    return text
-
 
 if __name__ == '__main__':
     tid, html, url = get_html()
@@ -182,8 +177,6 @@ if __name__ == '__main__':
     parser.make_soup(html)
     parser.parsing()
     text = parser.to_wiki()
-
-    text = categorization(text, parser.soup)
 
     print()
 

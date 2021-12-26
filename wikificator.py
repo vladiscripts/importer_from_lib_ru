@@ -82,6 +82,15 @@ class Scraper(SelenuimSession):
         return text_new
 
 
+def wikify_all_into_db():
+    from wikificator import Scraper
+    scraper = Scraper()
+    for text in db.db_wiki.find(wiki != None):
+        wikitext = scraper.wikify(text)
+        db.db_htmls.upsert({'tid': tid, 'wikified': text})
+        print(tid)
+
+
 if __name__ == '__main__':
 
     scraper = Scraper()

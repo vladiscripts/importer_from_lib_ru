@@ -176,7 +176,9 @@ class AuthorLoader(ItemLoader):
 class Text(Item):
 
     tid = Field()
-    slug = Field()
-    categories = Field()
+    # slug = Field()
+    # categories = Field()
     html = Field()
+    content = Field()
     wiki = Field()
+    wikified = Field()

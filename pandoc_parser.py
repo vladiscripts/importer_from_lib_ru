@@ -1,12 +1,14 @@
+#!/usr/bin/env python3
+import time
 import re
-
-import db
+import threading, queue
 import pypandoc
 import html as html_
 import mwparserfromhell as mwp
 
+import db
 from get_parsed_html import get_html
-from html2wiki import LibRu, categorization
+from html2wiki import LibRu
 from parser_html_to_wiki import *
 
 
@@ -81,7 +83,7 @@ def tags_a_refs(soup):
             e.extract()
 
 
-def covert_page(tid):
+def convert_page(tid):
     parser = LibRu()
 
     tid, input_html, url = get_html(tid=tid)
@@ -99,9 +101,12 @@ def covert_page(tid):
     # for e in parser.soup('blockquote'):
     #     e.unwrap()
 
+    for t in parser.soup.find_all('dd'):
+        t.name = 'p'
 
-    text = pypandoc.convert_text(parser.soup.decode(), 'mediawiki', format='html')
-    text = html_.unescape(text)
+    html = parser.soup.decode()
+    text = pypandoc.convert_text(html, 'mediawiki', format='html')
+    text = html_.unescape(text.strip('/'))
 
 
 
@@ -123,19 +128,17 @@ def covert_page(tid):
     text = re.sub(r'(<div.*?>)(\s+)', r'\2\1', text)
     text = re.sub(r'(\s+)(</div>)', r'\2\1', text)
 
-
     text = re.sub(r'<div align="center">(.+?)</div>', r'<center>\1</center>', text, flags=re.DOTALL)
-    text = re.sub(r'^(?:<center>\s*)?(\* \* \*|\*\*\*)(?:\s*</center>)?$', '{{***}}',  text, flags=re.MULTILINE)
+    text = re.sub(r'^(?:<center>\s*)?(\* \* \*|\*\*\*)(?:\s*</center>)?$', '{{***}}', text, flags=re.MULTILINE)
+    text = re.sub(r'^<center>\s*-{5}\s*</center>$', '{{bar}}', text, flags=re.MULTILINE)
+    text = re.sub(r'^<center>\s*-{6,}\s*</center>$', '{{---}}', text, flags=re.MULTILINE)
+    text = re.sub(r'<center>\s*(\[\[File:[^]]+?)\]\]\s*</center>', r'\1|center]]', text)
 
+    text = re.sub(r'([Α-Ω]+)', r'{{lang|grc|\1}}', text, flags=re.I)
+
+    text = re.sub(r'(\n==+[^=]+?<br[/ ]*>)\n+', r'\1', text)  # fix: \n после <br> в заголовках
 
     wc = mwp.parse(text)
-    # for t in wc.filter_tags():
-    #     if t.tag == '<ref':
-    #         for a in t.attributes:
-    #             if a.name == 'class' and a.value not in links_ids:
-    #
-    #             if a.name == 'id' and a.value not in links_ids:
-
 
     # удалить <span id=""> на которые нет ссылок
     links_ids = [l.title.lstrip('#') for l in wc.filter_wikilinks() if l.title.startswith('#')]
@@ -145,11 +148,12 @@ def covert_page(tid):
         # for span in spans: wc.remove(span)
     # out2 = re.sub('<span class="footnote"></span>', '', out2)
 
-
-
     # strip параметр в {{right|}}
     for t in [t for t in wc.filter_templates(matches=lambda x: x.name == 'right')]:
-        t.params[0].value = t.params[0].value.strip()
+        if t.params[0].value.strip() == '':
+            wc.remove(t)
+        else:
+            t.params[0].value = t.params[0].value.strip()
 
     # for t in [t for t in wc.filter_tags(matches=lambda x: x.tag == 'div')]:
     #     t.params[0].value = t.params[0].value.strip()
@@ -171,22 +175,55 @@ def covert_page(tid):
     return text
 
 
-def wikify():
-    from wikificator import Scraper
-    scraper = Scraper()
-    for text in db.db_wiki.find(wiki != None):
-        wikitext = scraper.wikify(text)
-        db.db_htmls.upsert({'tid': tid, 'wikified': text})
-        print()
+def convert_pages_to_db_with_pandoc_on_several_threads():
+    lock = threading.RLock()
+    q = queue.Queue(maxsize=20)
+    db_q = queue.Queue(maxsize=20)
+
+    def db_save():
+        while True:
+            while fifo_queue.empty():
+                time.sleep(1)
+            r = db_q.get()
+            db.db_htmls.upsert({'tid': r[0], 'wiki': r[1]}, ['tid'])
+            print('to db', tid)
+            db_q.task_done()
+
+    def worker():
+        while True:
+            while fifo_queue.empty():
+                time.sleep(1)
+            r = q.get()
+            # print(f'Working on {item}')
+            # print(f'Finished {item}')
+            tid = r['tid']
+            html = r['html']
+            text = convert_page(tid)
+            # with lock:
+            #     db.db_htmls.upsert({'tid': tid, 'wiki': text}, ['tid'])
+            db_q.put((tid, text))
+            print('converted', tid)
+            q.task_done()
+
+    threading.Thread(target=worker, daemon=True).start()
+
+    # turn-on the worker thread
+    for r in range(20):
+        threading.Thread(target=worker, daemon=True).start()
+
+    # for tid in [5643]:
+    # for r in db.db_htmls.find(db.db_htmls.table.c.wiki.isnot(None)):
+    for r in db.db_htmls.find(wiki=None):
+        # for r in db.db_htmls.find():
+        while q.full():
+            time.sleep(1)
+        q.put(r)
+
+    # block until all tasks are done
+    q.join()
+    print('All work completed')
 
 
-# for tid in [5643]:
-for r in db.db_htmls.find(wiki=None):
-    tid = r['tid']
-    text = covert_page(tid)
-    db.db_htmls.update({'tid': tid, 'wiki': text}, ['tid'])
+if __name__ == '__main__':
+    text = convert_page(tid=1)
     print()
-
-# wikify()
-
-print()

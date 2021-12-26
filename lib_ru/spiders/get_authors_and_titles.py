@@ -39,7 +39,7 @@ def selector_from_html5(response):
 
 
 class AuthorsSpider(CrawlSpider):
-    name = "get_all"
+    name = "get_authors_and_titles"
     allow_domains = ['az.lib.ru']
     start_urls = [
         # 'http://az.lib.ru/a/',
@@ -79,6 +79,12 @@ class AuthorsSpider(CrawlSpider):
 
         # l.add_css('author_name', 'h2::text', re=r':\s*(.*?)\s*:')
         author_name = response.css('h2::text').re_first(r':\s*(.*?)\s*:')
+        # todo: в author_name и БД по паттерну r':\s*(.*?)\s*:' попали категории вроде "американская литература"
+        #  http://az.lib.ru/a/amerikanskaja_literatura/
+        #  на этих страницах также есть тексты анонимов http://az.lib.ru/a/amerikanskaja_literatura/text_1874_zhenskaya_voyna_oldorfo.shtml
+        #  но не все, например, здесь есть автор http://az.lib.ru/f/francuzskij_epos/text_1968_pesn_o_rolande.shtml
+        #  но в БД он не попал, поскольку использована insert_ignore по unique title_slug
+        #  Надо перезагрузить тексты. Данные об авторе брать из шапок текстов, а не со страницы авторов.
         l.add_value('name', author_name)
         family, _, names = author_name.partition(' ')
         # l.add_value('name_parsed_for_WS', f'{names} {family}')

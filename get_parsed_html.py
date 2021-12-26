@@ -1,6 +1,9 @@
+import re
+import html as html_
 from bs4 import BeautifulSoup, Comment, NavigableString
 from db import *
 
+re_spaces_many_no_newlines = re.compile(r'[^\S\r\n]+')
 
 def selector_from_html5(response):
     response = response.replace(
@@ -8,6 +11,10 @@ def selector_from_html5(response):
         # body=str(BeautifulSoup(response.body, 'html.parser', from_encoding='cp1251')))
         body=str(BeautifulSoup(response.body, 'html5lib', from_encoding='cp1251')))
     return response
+
+
+re_get_content_html = re.compile(r'<noindex>\s*<!---+ Собственно произведение -+>\s*(.+?)\s*<!-+--->\s*</noindex>',
+                                 flags=re.S)
 
 
 def get_html(tid=None):
@@ -34,7 +41,15 @@ def get_html(tid=None):
     #     #
     #     # wiki =
     #     db_wiki.insert({'tid': r['tid'], 'wiki': wiki}, ensure=True)
-    return tid, html, text_url
+
+    if m := re_get_content_html.search(html):
+        html = m.group(1)
+        html = re.sub(r'</?xxx7>', '', html)
+        html = html_.unescape(html)
+        html = re_spaces_many_no_newlines.sub(' ', html)  #   и множественные пробелы, без переводов строк
+        html = re.sub(r'<p( [^>]*)?>\s*(<br>)+', r'<p\1>', html, flags=re.I)
+
+        return tid, html, text_url
 
 
 def db_write_content_html():

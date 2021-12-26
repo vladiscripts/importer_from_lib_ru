@@ -13,6 +13,7 @@ tags_mapping = {
 }
 
 re_spaces = re.compile(r'\s*')
+re_spaces_many_no_newlines = re.compile(r'[^\S\r\n]+')
 re_spaces_whole_string = re.compile(r'^[^\S\r\n]*$')
 re_spaces_whole_string_with_newlines = re.compile(r'^\s*$')
 re_begin_spaces = re.compile(r'^([^\S\r\n]+)')
@@ -698,10 +699,10 @@ def find_and_combine_tags(soup, init_tag_name: str, init_tag_attrs: dict = None)
         next_siblings = []
         # next_siblings_all = list(tag.next_siblings)
         for t in tag.next_siblings:
-            if isinstance(t, NavigableString) and re_symbols_ignore and not re_symbols_ignore.match(t):
+            if is_string(t) and re_symbols_ignore and re_symbols_ignore.match(t):
                 next_siblings.append(t)
-            elif isinstance(t, NavigableString) and re_symbols_ignore and re_symbols_ignore.match(t):
-                next_siblings.append(t)
+            # elif is_string(t) and re_symbols_ignore and not re_symbols_ignore.match(t):
+            #     next_siblings.append(t)
             elif t.name in ignoring_tags_names and t.attrs == init_tag_attrs:  # also checking the tag attrs
                 next_siblings.append(t)
             else:
@@ -718,7 +719,7 @@ def find_and_combine_tags(soup, init_tag_name: str, init_tag_attrs: dict = None)
         if has_other_tag_met:
             while True:
                 last_tag = next_siblings[-1]
-                if isinstance(last_tag, NavigableString):
+                if is_string(last_tag):
                     next_siblings.pop()
                 elif last_tag.name != init_tag_name and last_tag.attrs != init_tag_attrs:
                     next_siblings.pop()
@@ -743,10 +744,10 @@ def find_and_combine_tags(soup, init_tag_name: str, init_tag_attrs: dict = None)
         re_symbols_ignore = re.compile(r'^[\s.,-]+$')
     elif init_tag_name == 'b':
         # Bold changes the style of all characters
-        re_symbols_ignore = re.compile(r'^[\s]+$')
+        re_symbols_ignore = re.compile(r'^\s+$')
     elif init_tag_name == 'div':
         # Here should be careful with merging, because a html can have some `\n` between block tags (like `div`s)
-        re_symbols_ignore = re.compile(r'^[\s]+$')
+        re_symbols_ignore = re.compile(r'^\s+$')
     else:
         re_symbols_ignore = None
 
@@ -763,6 +764,8 @@ def find_and_combine_tags(soup, init_tag_name: str, init_tag_attrs: dict = None)
             # looking for a next tags group
             last_tag = tags_to_append[-1] if tags_to_append else tag
             for tag in all_wanted_tags:
+                if tag.sourceline is None or last_tag.sourceline is None:
+                    continue
                 if tag.sourceline > last_tag.sourceline \
                         or (tag.sourceline == last_tag.sourceline and tag.sourcepos > last_tag.sourcepos):
                     break

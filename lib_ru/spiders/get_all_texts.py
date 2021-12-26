@@ -175,14 +175,15 @@ class AuthorsSpider(CrawlSpider):
         yield item
 
     def start_requests(self):
-        t = {'url': 'http://az.lib.ru/d/dikkens_c/text_0110oldorfo.shtml', 'id': 29468}
-        yield scrapy.Request(t['url'], callback=self.save_html_to_db, cb_kwargs={'tid': t['id']})
+        # t = {'url': 'http://az.lib.ru/d/dikkens_c/text_0110oldorfo.shtml', 'id': 29468}
+        # yield scrapy.Request(t['url'], callback=self.save_html_to_db, cb_kwargs={'tid': t['id']})
 
-        # for a in db_authors.all():
-        #     col = db_all_tables.table.c.html
-        #     for t in db_all_tables.find(col.is_(None), author_id=a['id']):
-        #         yield scrapy.Request(f"http://az.lib.ru{a['slug']}/{t['slug']}", callback=self.save_html_to_db,
-        #                              cb_kwargs={'tid': t['id']})
+        for a in db_authors.all():
+            # col = db_all_tables.table.c.html
+            # for t in db_all_tables.find(col.is_(None), author_id=a['id']):
+            for t in db_all_tables.find(html=None):
+                yield scrapy.Request(t['text_url'], callback=self.save_html_to_db,
+                                     cb_kwargs={'tid': t['tid']})
 
     # def parse_start_url(self, response):
     def parse_item(self, response, slug):
@@ -248,8 +249,8 @@ class AuthorsSpider(CrawlSpider):
         # i['html'] = content
         # i['html'] = response.text
 
-        # db_htmls.upsert({'tid': tid, 'html': response.text}, ['tid'], ensure=True)
-        db_htmls.insert({'tid': tid, 'html': response.text}, ensure=True)
+        db_htmls.upsert({'tid': tid, 'html': response.text}, ['tid'])
+        # db_htmls.insert({'tid': tid, 'html': response.text}, ensure=True)
 
         yield i
 
