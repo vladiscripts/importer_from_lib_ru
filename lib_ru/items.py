@@ -146,6 +146,7 @@ class AuthorAboutLoader(ItemLoader):
 class AuthorItem(Item):
     slug = Field()
     name = Field()
+    name_for_WS = Field()
     family_parsed_for_WS = Field()
     names_parsed_for_WS = Field()
     image_url = Field()

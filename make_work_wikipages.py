@@ -109,7 +109,7 @@ def make_wikititle(r):
 
 
 def make_wikipages_to_db():
-    for r in db.db_all_tables.find(db.db_all_tables.table.c.wiki.isnot(None)):
+    for r in db.all_tables.find(db.all_tables.table.c.wiki.isnot(None)):
         d = D(author=r['name'],
               title=r['title'],
               date=r['year'],
@@ -123,5 +123,5 @@ def make_wikipages_to_db():
         d.wiki_title = make_wikititle(r)
         wikipage = make_wikipage(d)
         # db.db_htmls.upsert({'tid': r['tid'], 'wikified': d.text}, ['tid'])
-        db.db_htmls.upsert({'tid': r['tid'], 'wiki_page': wikipage, 'wiki_title': d.wiki_title}, ['tid'], ensure=True)
+        db.htmls.upsert({'tid': r['tid'], 'wiki_page': wikipage, 'wiki_title': d.wiki_title}, ['tid'], ensure=True)
         print()

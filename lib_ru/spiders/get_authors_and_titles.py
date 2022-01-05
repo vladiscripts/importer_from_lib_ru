@@ -86,6 +86,7 @@ class AuthorsSpider(CrawlSpider):
         #  но в БД он не попал, поскольку использована insert_ignore по unique title_slug
         #  Надо перезагрузить тексты. Данные об авторе брать из шапок текстов, а не со страницы авторов.
         l.add_value('name', author_name)
+        l.add_value('name_for_WS', author_name)
         family, _, names = author_name.partition(' ')
         # l.add_value('name_parsed_for_WS', f'{names} {family}')
         l.add_value('family_parsed_for_WS', family)

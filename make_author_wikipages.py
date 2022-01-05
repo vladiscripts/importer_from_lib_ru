@@ -74,7 +74,7 @@ def categorization(text, soup, r):
 
 
 def make_wikipages_to_db():
-    for r in db.db_ahtmls.find(db.db_htmls.table.c.wiki.isnot(None)):
+    for r in db.db_ahtmls.find(db.htmls.table.c.wiki.isnot(None)):
         d = D(author=r['name'],
               title=r['title'],
               date=r['year'],
@@ -85,4 +85,4 @@ def make_wikipages_to_db():
               )
         d['categories_string'] = categorization(text, parser.soup, r)
         text = make_wikipage(d)
-        db.db_htmls.upsert({'tid': r['tid'], 'wikified': d.text}, ['tid'])
+        db.htmls.upsert({'tid': r['tid'], 'wikified': d.text}, ['tid'])

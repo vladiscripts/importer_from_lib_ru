@@ -29,7 +29,7 @@ import dataset
 from threading import RLock
 from bs4 import BeautifulSoup, Comment
 
-from db import *
+import db
 
 
 def selector_from_html5(response):
@@ -178,10 +178,10 @@ class AuthorsSpider(CrawlSpider):
         # t = {'url': 'http://az.lib.ru/d/dikkens_c/text_0110oldorfo.shtml', 'id': 29468}
         # yield scrapy.Request(t['url'], callback=self.save_html_to_db, cb_kwargs={'tid': t['id']})
 
-        for a in db_authors.all():
-            # col = db_all_tables.table.c.html
-            # for t in db_all_tables.find(col.is_(None), author_id=a['id']):
-            for t in db_all_tables.find(html=None):
+        for a in db.authors.all():
+            # col = db.all_tables.table.c.html
+            # for t in db.all_tables.find(col.is_(None), author_id=a['id']):
+            for t in db.all_tables.find(html=None):
                 yield scrapy.Request(t['text_url'], callback=self.save_html_to_db,
                                      cb_kwargs={'tid': t['tid']})
 
@@ -215,7 +215,7 @@ class AuthorsSpider(CrawlSpider):
         # i['html'] = content
         # i['html'] = response.text
 
-        db_htmls.update({'slug': slug, 'html': response.text}, ['slug'], ensure=True)
+        db.htmls.update({'slug': slug, 'html': response.text}, ['slug'], ensure=True)
 
         yield i
 
@@ -249,8 +249,8 @@ class AuthorsSpider(CrawlSpider):
         # i['html'] = content
         # i['html'] = response.text
 
-        db_htmls.upsert({'tid': tid, 'html': response.text}, ['tid'])
-        # db_htmls.insert({'tid': tid, 'html': response.text}, ensure=True)
+        db.htmls.upsert({'tid': tid, 'html': response.text}, ['tid'])
+        # db.htmls.insert({'tid': tid, 'html': response.text}, ensure=True)
 
         yield i
 

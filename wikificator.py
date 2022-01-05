@@ -87,7 +87,7 @@ def wikify_all_into_db():
     scraper = Scraper()
     for text in db.db_wiki.find(wiki != None):
         wikitext = scraper.wikify(text)
-        db.db_htmls.upsert({'tid': tid, 'wikified': text})
+        db.htmls.upsert({'tid': tid, 'wikified': text})
         print(tid)
 
 

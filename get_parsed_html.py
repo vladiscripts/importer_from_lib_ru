@@ -1,7 +1,7 @@
 import re
 import html as html_
 from bs4 import BeautifulSoup, Comment, NavigableString
-from db import *
+import db
 
 re_spaces_many_no_newlines = re.compile(r'[^\S\r\n]+')
 
@@ -31,7 +31,7 @@ def get_html(tid=None):
         tid = 6734  # <pre>
         # tid = 155
 
-    r = db_all_tables.find_one(tid=tid)
+    r = all_tables.find_one(tid=tid)
     # html = r['content']
     html = r['html']
     global text_url
@@ -53,13 +53,13 @@ def get_html(tid=None):
 
 
 def db_write_content_html():
-    for r in db_htmls.all():
+    for r in db.htmls.all():
         html = r['html'].replace('&#1122;', 'Ѣ').replace('&#1123;', 'ѣ')
         soup = BeautifulSoup(html, 'html5lib')
         content = soup.find(text=lambda x: isinstance(x, Comment) and 'Собственно произведение' in x). \
             find_parent('noindex').prettify()
         # dom = parsel.Selector(html)
         # content = dom.xpath('//noindex//comment()[contains(.,"Собственно произведение")]/parent::noindex').get()
-        db_htmls.update({'tid': r['tid'], 'content': content}, ['tid'], ensure=True)
+        db.htmls.update({'tid': r['tid'], 'content': content}, ['tid'], ensure=True)
 
     # db_write_content_html()

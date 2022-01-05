@@ -185,7 +185,7 @@ def convert_pages_to_db_with_pandoc_on_several_threads():
             while fifo_queue.empty():
                 time.sleep(1)
             r = db_q.get()
-            db.db_htmls.upsert({'tid': r[0], 'wiki': r[1]}, ['tid'])
+            db.htmls.upsert({'tid': r[0], 'wiki': r[1]}, ['tid'])
             print('to db', tid)
             db_q.task_done()
 
@@ -213,7 +213,7 @@ def convert_pages_to_db_with_pandoc_on_several_threads():
 
     # for tid in [5643]:
     # for r in db.db_htmls.find(db.db_htmls.table.c.wiki.isnot(None)):
-    for r in db.db_htmls.find(wiki=None):
+    for r in db.htmls.find(wiki=None):
         # for r in db.db_htmls.find():
         while q.full():
             time.sleep(1)
