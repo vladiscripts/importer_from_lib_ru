@@ -93,6 +93,7 @@ def convert_page(tid):
     tags_a_refs(parser.soup)
     parser.parsing_extentions()
     parser.inline_tags()
+    # parser.soup.smooth()
     remove_spaces_between_tags(parser.soup, additinals_tags=[])
 
     # for e in parser.soup('pre'):
@@ -205,7 +206,7 @@ def convert_pages_to_db_with_pandoc_on_several_threads():
             print('converted', tid)
             q.task_done()
 
-    threading.Thread(target=worker, daemon=True).start()
+    threading.Thread(target=db_save, daemon=True).start()
 
     # turn-on the worker thread
     for r in range(20):

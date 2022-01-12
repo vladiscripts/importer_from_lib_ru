@@ -98,6 +98,19 @@ def categorization(text, r):
     cats.append("[[Категория:Импорт/lib.ru]]")
     cats.append(f"[[Категория:{r['name']}]]")
     cats.append(f"[[Категория:Литература {r['year']} года]]")
+
+    cid_translation = db.texts_categories_names.find_one(name='Переводы')
+
+    if not r['translator'] and db.texts_categories.find_one(category_id=cid_translation, tid=r['tid']):
+        cats.append(f"[[Категория:Импорт/lib.ru/Не указан переводчик и есть категория перевода]]")
+    if r['translator'] and not db.texts_categories.find_one(category_id=cid_translation, tid=r['tid']):
+        cats.append(f"[[Категория:Импорт/lib.ru/Указан переводчик и нет категории перевода]]")
+
+    if r['author_tag']:
+        if author_ := re.search(r'<a .+?>\s*(.*?)\s*</a>', r['author_tag']):
+            if author_.group(1) not in ([r['litarea'], r['name']]):
+                cats.append('[[Категория:Импорт/lib.ru/Возможна ошибка указания автора]]')
+
     return '\n'.join(cats)
 
 

@@ -23,7 +23,8 @@ db_lock = RLock()
 
 # crawler.db = dataset.connect('sqlite:///db.sqlite', engine_kwargs=dict(echo=False))
 # db = dataset.connect('sqlite:////home/vladislav/var/from_lib_ru.sqlite')
-db = dataset.connect('sqlite:////home/vladislav/var/db/from_lib_ru.sqlite')
+db = dataset.connect('sqlite:////home/vladislav/var/db/from_lib_ru.sqlite',
+                     engine_kwargs={'connect_args': {'check_same_thread': False}})
 # db = dataset.connect(f'mysql+pymysql://root:root@localhost/lib_ru')
 T = db.types
 
@@ -87,7 +88,14 @@ CREATE VIEW all_tables as
              h.tid,
              h.html,
              h.wiki,
-             h.wikified
+             h.wikified,
+             h.author,
+             h.translator,
+             h.desc,
+             h.year,
+             h.author_tag,
+             h.year_tag,
+             h.annotation_tag
       from authors a
                left join titles t on a.id = t.author_id
                left join htmls h on t.id = h.tid

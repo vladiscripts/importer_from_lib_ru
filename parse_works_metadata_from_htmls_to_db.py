@@ -3,7 +3,9 @@ from urllib.parse import urlsplit, parse_qs, parse_qsl, unquote, quote, urljoin,
 import json
 import time
 import sqlite3
+import sqlalchemy.exc
 import os
+import threading, queue
 from pathlib import Path
 from typing import Optional, Union
 from dataclasses import dataclass
@@ -14,6 +16,12 @@ import html as html_
 
 import db
 
+lock = threading.RLock()
+q = queue.Queue(maxsize=20)  # fifo_queue
+db_q = queue.Queue(maxsize=20)
+
+categories_cached = [(r['id'], r['slug'], r['name']) for r in db.texts_categories_names.find()]
+
 
 @dataclass
 class D:
@@ -21,43 +29,33 @@ class D:
     from collections import namedtuple
     d = namedtuple('D', 'author title date translator source other text categories')
         """
-    author: str = ''
+    tid: int
+    author: str = None
+    translator: str = None
     categories = []
-    year = ''
-    desc = ''
-
-
-def add_categories(categories, d):
-    categories_to_add = []
-    for slug_d, name_d in d.categories:
-        for cid, slug, name in categories:
-            if slug == slug_d:
-                break
-        else:
-            db.texts_categories_names.insert({'slug': slug_d, 'name': name_d}, ensure=True)
-            cid = db.texts_categories_names.find_one(slug=slug_d)['id']
-            categories.append([cid, slug_d, name_d])
-        categories_to_add.append({'tid': r['tid'], 'category_id': cid})
-
-    db.texts_categories.insert_many(categories_to_add, ensure=True)
-    print()
+    year = None
+    desc = None
+    author_tag = None
+    year_tag = None
+    annotation_tag = None
 
 
 class Parse_metadata_from_html:
-    # def parse_metadata_from_html(r):
-    d = D()
+
+    def get_desc_block(self, soup):
+        for t in soup.find_all('table'):
+            for e in t.find_all(
+                    text=lambda x: isinstance(x, Comment) and 'Блок описания произведения (слева вверху)' in x):
+                return t
 
     def get_li_block(self, desc_block) -> Optional[tuple]:
         # for ul in desc_block.find_all('ul'):
         #     for _ in ul.find_all(text=lambda x: isinstance(x, NavigableString) and 'Оставить комментарий' in x):
         ul = desc_block.find_all('ul')[0]
         li = ul.find_all('li')
-        if len(li) not in [5, 6]:
-            raise RuntimeError('tid:', self.r['tid'], 'длинна <li> описания не равна 6')
-        else:
-            return li[1], li[2], li[4]  # author_line, year_line, categories_line
+        return li
 
-    def get_annotation_blocks(self, desc_block):
+    def get_annotation_block(self, desc_block):
         for e in desc_block.find_all(text=lambda x: isinstance(x, NavigableString) and 'Аннотация:' in x):
             li = e.find_parent('li')
             z = e
@@ -76,7 +74,12 @@ class Parse_metadata_from_html:
 
     def parse_annotation(self, annotation_):
         # todo
-        self.d.desc = annotation_.text
+        if annotation_ and annotation_.text.strip() != '':
+            # self.d.desc = annotation_.text  # удаляет теги, заменяет <br> на \n
+            if m := re.search(r'<li>(\s|<br[\s/]*>|\.)*(.*?)(\s|<br[\s/]*>)*</li>', str(annotation_), flags=re.DOTALL):
+                t = m.group(2)
+                if not re.search(r'^[.,?!]]*$', t):  # исключаем пустое значение
+                    self.d.desc = t
         # self.d.year=str(annotation_)
 
     def parse_categories(self, categories_line):
@@ -98,15 +101,23 @@ class Parse_metadata_from_html:
         # if email := author_line.find(text=lambda x: isinstance(x, NavigableString) and '@lib.ru' in x):
         #     email.extract()
         for a in author_line.find_all('a'):
-            if href := a.attrs.get('href'):
+            if r['name'].replace('_', ' ') == r['litarea']:
+                if a.text.strip() not in ([r['litarea'], r['name']]):
+                    self.d.author = a.text.strip()
+                break
+
+            elif href := a.attrs.get('href'):
                 if urlsplit(href).path.rstrip('/') == r['author_slug']:
                     self.d.author = r['name_for_WS']
                     break
             else:
                 print('href != author_slug')
         else:
-            self.d.author = re.search(r'(.+?)\s*\(перевод:\s*(.+?)\s*\)', author_line_s)
             print('нет <a> в строке автора')
+            if author_ := re.search(r'(.+?)\s*\(перевод:\s*(.+?)\s*\)', author_line_s):
+                self.d.author = author_
+            else:
+                raise RuntimeError('tid:', self.r['tid'], 'автор не распарсен')
 
         # if translator := re.search(r'\(перевод:\s*(.+?)\s*\)', author_line_s):
         #     d.translator = translator.group(1)
@@ -114,7 +125,7 @@ class Parse_metadata_from_html:
         # if email := author_line.find(text=lambda x: isinstance(x, NavigableString) and '@lib.ru' in x):
         #     email.extract()
 
-    def parse_translator(self, annotation_):
+    def parse_translator(self, annotation_, author_line):
         r = self.r
         """Перевод <a href="http://az.lib.ru/z/zhurawskaja_z_n/">Зинаиды Журавской</a>"""
 
@@ -126,34 +137,117 @@ class Parse_metadata_from_html:
         # if translator := re.search(r'(.+?)\s*\(Перевод \s*(.+?)\s*\)', annotation_):
         #     d.translator = translator.group(1)
 
-        a_ = [s.next_sibling for e in annotation_.find_all('i') for s in e.contents
-              if isinstance(s, NavigableString) and 'Перевод ' in s
-              and isinstance(s.next_element, Tag) and s.next_sibling.name == 'a']
-        if a_:
-            if href := a_[0].attrs.get('href'):
-                if r := db.all_tables.find_one(author_slug=urlsplit(href).path.rstrip('/')):
-                    self.d.translator = r['name_for_WS']
-        else:
-            d.author = re.search(r'(.+?)\s*\(перевод:\s*(.+?)\s*\)', author_line_s)
-            print('нет <a> в строке автора')
+        if annotation_:
+            for e in annotation_.find_all('i'):
+                for s in e.contents:
+                    if isinstance(s, NavigableString) and 'Перевод ' in s:
+                        if isinstance(s.next_element, Tag) and s.next_element.name == 'a':
+                            a_ = s.next_element
+                            href = a_.attrs.get('href')
+                            if href and a_.attrs.get('href') != '':
+                                if r := db.all_tables.find_one(
+                                        author_slug=urlsplit(href.strip()).path.replace('/editors', '').rstrip('/')):
+                                    self.d.translator = r['name_for_WS']
+                                    break
+                            else:
+                                pass
+                            if self.d.translator is None:
+                                # http://az.lib.ru/d/degen_e_w/
+                                # raise RuntimeError('tid:', self.r['tid'], 'не определён переводчик в <a>')
+                                print('tid:', self.r['tid'], 'не определён переводчик в <a>')
+                                self.d.translator = e.text
+                                e.extract()
+                        # elif translator_ := re.search(r'Перевод (.+)', s):
+                        #     self.d.translator = translator_.group(1)
+                        #     s.extract()
+                        # else:
+                        #     raise RuntimeError('tid:', self.r['tid'], 'не определён переводчик')
+                        else:
+                            self.d.translator = s
+                            s.extract()
+                            if e.contents == [] :
+                                e.extract()
+
+        if self.d.translator is None:
+            if translator_ := re.search(r'\(перевод:\s*(.+?)\s*\)', author_line.text):
+                self.d.translator = translator_.group(1)
+            else:
+                # print('нет <a> в строке автора')
+                pass
+
+        is_cat_transl = [True for slug, name in self.d.categories if name == 'Переводы']
+        if is_cat_transl and self.d.translator is None:
+            # raise RuntimeError('tid:', self.r['tid'], 'не определён переводчик')
+            print('tid:', self.r['tid'], 'не определён переводчик', r['text_url'])
+        elif not is_cat_transl and self.d.translator:
+            # raise RuntimeError('tid:', self.r['tid'], 'переводчик без категории перевода')
+            print('tid:', self.r['tid'], 'переводчик без категории перевода', r['text_url'])
 
     def parse(self, r):
         self.r = r
+
+        self.d = D(tid=r['tid'])
         soup = BeautifulSoup(r['html'], 'html5lib')
 
-        desc_block = [t for t in soup.find_all('table') for e in t.find_all(
-            text=lambda x: isinstance(x, Comment) and 'Блок описания произведения (слева вверху)' in x)][0]
-        author_line, year_line, categories_line = self.get_li_block(desc_block)
-        annotation_ = self.get_annotation_blocks(desc_block)
+        desc_block = self.get_desc_block(soup)
+        annotation_ = self.get_annotation_block(desc_block)
+        li = self.get_li_block(desc_block)
+        if len(li) not in [5, 6]:
+            # raise RuntimeError('tid:', self.r['tid'], 'длинна <li> описания не равна 6')
+            print('tid:', self.d.tid, 'длинна <li> описания не равна 5-6')
+            return
+        else:
+            author_line, year_line, categories_line = li[1], li[2], li[4]
+        for store, tag in zip(('author_tag', 'year_tag', 'annotation_tag'), (author_line, year_line, annotation_)):
+            if tag:
+                t = re.search(r'<li>(\s|<br[\s/]*>)*(.*?)(\s|<br[\s/]*>)*</li>', str(tag), flags=re.DOTALL)
+                if t.group(2) != '':
+                    self.d.__setattr__(store, t.group(2))
+
+        self.parse_categories(categories_line)
 
         self.parse_author(author_line)
-        self.parse_translator(annotation_)
+        self.parse_translator(annotation_, author_line)
         self.parse_year(year_line)
-        self.parse_categories(categories_line)
 
         self.parse_annotation(annotation_)
 
         return self.d
+
+
+tids = []
+
+
+def add_categories(d, categories_cached):
+    tid = d.tid
+
+    if tid in tids:
+        raise RuntimeError('tid:', tid, 'tid уже обрабатывался, дублирование в threads')
+        # print('ой', tid)
+    else:
+        tids.append(tid)
+
+    categories_to_add = []
+    for slug_d, name_d in d.categories:
+        for cid, slug, name in categories_cached:
+            if slug == slug_d:
+                break
+        else:
+            # print('to db insert', d.tid)
+            db.texts_categories_names.insert({'slug': slug_d, 'name': name_d}, ensure=True)
+            # print('to db find_one', d.tid)
+            cid = db.texts_categories_names.find_one(slug=slug_d)['id']
+            categories_cached.append([cid, slug_d, name_d])
+        categories_to_add.append({'tid': tid, 'category_id': cid})
+
+    try:
+        # print('to db insert_many', d.tid)
+        db.texts_categories.insert_many(categories_to_add, ensure=True)
+    except sqlalchemy.exc.IntegrityError:
+        # print('to db delete', d.tid)
+        db.texts_categories.delete(tid=tid)
+        # print('to db insert_many', d.tid)
+        db.texts_categories.insert_many(categories_to_add, ensure=True)
 
 
 def parse_metadata_from_html_parsel(tid, html):
@@ -184,22 +278,68 @@ def parse_metadata_from_html_parsel(tid, html):
 
 
 def main():
-    categories = [{'slug': (r['id'], r['slug'], r['name'])} for r in db.texts_categories_names.find()]
+    # from collections import namedtuple
+    # Cat = namedtuple('Cat', '')
 
-    # for r in db.db_all_tables.find(db.db_all_tables.table.c.wiki_page.isnot(None)):
-    # for r in db.db_all_tables.find(wiki=None):
-    # r = db.db_all_tables.find_one(tid=7487)
-    tid = 7488  # http://az.lib.ru/d/defo_d/text_0014.shtml  В аннотации <i>Перевод <a href="http://az.lib.ru/z/zhurawskaja_z_n/">Зинаиды Журавской</a></i>
-    r = db.all_tables.find_one(tid=tid)
+    # for r in db.all_tables.find(db.all_tables.table.c.wiki_page.isnot(None)):
+    # for r in db.all_tables.find(wiki=None):
+    # r = db.all_tables.find_one(tid=7487)
+    # tid = 7488  # http://az.lib.ru/d/defo_d/text_0014.shtml  В аннотации <i>Перевод <a href="http://az.lib.ru/z/zhurawskaja_z_n/">Зинаиды Журавской</a></i>
+    tid = 7487  # http://az.lib.ru/d/defo_d/text_0013_robinson_crusoe-oldorfo.shtml  В строк автор "Дефо Даниель (перевод: Я . . . . въ Л . . . . .нъ)"
 
-    # d = parse_metadata_from_html(r)
-    d = Parse_metadata_from_html().parse(r)
-    # d = parse_metadata_from_html_parsel(r['tid'], r['html'])
-    if not d:
-        return
+    # tid = 7
 
-    db.htmls.update({'tid': r['tid'], 'author': d.author, 'year': d.year, 'desc': d.desc}, ['tid'], ensure=True)
-    add_categories(categories, d)
+    def db_save():
+        while True:
+            while db_q.empty():
+                time.sleep(1)
+            d = db_q.get()
+            print('to db', d.tid)
+
+            with lock:
+                add_categories(d, categories_cached)
+
+                db.htmls.update(
+                    {'tid': d.tid, 'author': d.author, 'translator': d.translator, 'year': d.year, 'desc': d.desc,
+                     'author_tag': d.author_tag, 'year_tag': d.year_tag, 'annotation_tag': d.annotation_tag},
+                    ['tid'], ensure=True)
+
+            db_q.task_done()
+
+    def worker():
+        while True:
+            while q.empty():
+                time.sleep(1)
+            r = q.get()
+            print(r['tid'])
+            parser = Parse_metadata_from_html()
+            d = parser.parse(r)
+            if d:
+                db_q.put(d)
+
+            q.task_done()
+
+    threading.Thread(target=db_save, name='db_save', daemon=True).start()
+
+    # turn-on the worker thread
+    for r in range(20):
+        threading.Thread(target=worker, daemon=True).start()
+
+    import dataset
+    db1 = dataset.connect('sqlite:////home/vladislav/var/db/from_lib_ru.sqlite',
+                          engine_kwargs={'connect_args': {'check_same_thread': False}})
+    # for tid in [5643]:
+    # for r in db.db_htmls.find(db.db_htmls.table.c.wiki.isnot(None)):
+    for r in db1['all_tables'].find(author=None):
+    # for r in db.all_tables.find(tid =654):
+        while q.full():
+            time.sleep(1)
+        q.put(r)
+
+    # block until all tasks are done
+    q.join()
+    db_q.join()
+    print('All work completed')
 
 
 if __name__ == '__main__':
