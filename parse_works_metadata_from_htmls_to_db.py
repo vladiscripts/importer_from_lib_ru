@@ -151,6 +151,7 @@ class Parse_metadata_from_html:
                                     break
                             else:
                                 pass
+                            a_.unwrap()
                             if self.d.translator is None:
                                 # http://az.lib.ru/d/degen_e_w/
                                 # raise RuntimeError('tid:', self.r['tid'], 'не определён переводчик в <a>')
@@ -165,7 +166,7 @@ class Parse_metadata_from_html:
                         else:
                             self.d.translator = s
                             s.extract()
-                            if e.contents == [] :
+                            if e.contents == []:
                                 e.extract()
 
         if self.d.translator is None:
@@ -331,7 +332,7 @@ def main():
     # for tid in [5643]:
     # for r in db.db_htmls.find(db.db_htmls.table.c.wiki.isnot(None)):
     for r in db1['all_tables'].find(author=None):
-    # for r in db.all_tables.find(tid =654):
+        # for r in db.all_tables.find(tid =654):
         while q.full():
             time.sleep(1)
         q.put(r)
