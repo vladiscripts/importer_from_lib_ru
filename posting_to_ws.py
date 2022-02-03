@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-from dataclasses import dataclass
 import time
 import re
 import threading, queue
-import pypandoc
+# import pypandoc
+from typing import Optional, Union, Sequence, List, Tuple
+from pydantic import BaseModel
+from pydantic.dataclasses import dataclass
 import html as html_
 import mwparserfromhell as mwp
 import pywikibot as pwb

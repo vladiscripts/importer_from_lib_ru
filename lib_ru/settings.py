@@ -68,9 +68,16 @@ SPIDER_MIDDLEWARES = {
 #    'scrapy.extensions.telnet.TelnetConsole': None,
 # }
 
+IMAGES_STORE = 'images_authors'
+# IMAGES_MIN_HEIGHT = 410
+# IMAGES_MIN_WIDTH = 410
+IMAGES_EXPIRES = 30
+
 # Configure item pipelines
 # See http://scrapy.readthedocs.org/en/latest/topics/item-pipeline.html
 ITEM_PIPELINES = {
+    'lib_ru.pipelines.MyImagesPipeline': 1,
+    # 'lib_ru.pipelines.ImagesPipeline': 1,
     'lib_ru.pipelines.LibRuPipeline': 300,
 }
 

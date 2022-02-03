@@ -2,14 +2,30 @@
 import time
 import re
 import threading, queue
-import pypandoc
+from typing import Optional, Union, Tuple, List
+from pydantic import BaseModel, ValidationError, Field, validator, root_validator, Extra
+from pydantic.dataclasses import dataclass
 import html as html_
 import mwparserfromhell as mwp
+import pypandoc
+from bs4 import BeautifulSoup, Tag
 
 import db
-from get_parsed_html import get_html
+from get_parsed_html import get_html, get_content_from_html, get_content_from_html_soup
 from html2wiki import LibRu
 from parser_html_to_wiki import *
+
+
+class H(BaseModel):
+    tid: int
+    html: str
+    soup: Optional[BeautifulSoup]
+    wiki: Optional[str]
+
+    class Config:
+        # validate_assignment = True
+        extra = Extra.ignore
+        arbitrary_types_allowed = True
 
 
 def tags_a_refs(soup):
@@ -81,20 +97,45 @@ def tags_a_refs(soup):
 
                     break
             e.extract()
+    return soup
 
 
-def convert_page(tid):
+def convert_page(source):
     parser = LibRu()
 
-    tid, input_html, url = get_html(tid=tid)
+    # match source:
+    #     case BeautifulSoup() | Tag():
+    #         soup = source
+    #     case str():
+    #         # parser.content = get_content_from_html_soup(d.soup)
+    #         input_html = get_content_from_html(source)
+    #         parser.soup = BeautifulSoup(input_html, 'html5lib')
+    #     case _:
+    #         raise Exception('source :BeautifulSoup | Tag | str')
 
-    parser.make_soup(input_html)
-    move_corner_spaces_from_tags(parser.soup)
-    tags_a_refs(parser.soup)
-    parser.parsing_extentions()
-    parser.inline_tags()
+    if isinstance(source, (BeautifulSoup, Tag)):
+        soup = source
+    elif isinstance(source, str):
+        # parser.content = get_content_from_html_soup(d.soup)
+        input_html = get_content_from_html(source)
+        input_html
+        parser.soup = BeautifulSoup(input_html, 'html5lib')
+    else:
+        raise Exception('source :BeautifulSoup | Tag | str')
+
+    # parser.input_html = get_content_from_html(h.html)
+    # parser.soup = d.soup
+
+    # parser.make_soup(input_html)
+    # parser.soup = BeautifulSoup(input_html, 'html5lib')
+    # parser.soup = d.soup
+
+    # parser.soup = move_corner_spaces_from_tags(parser.soup)
+    parser.soup = tags_a_refs(parser.soup)
+    parser.soup = parser.parsing_extentions(parser.soup)
+    parser.soup = parser.inline_tags(parser.soup)
     # parser.soup.smooth()
-    remove_spaces_between_tags(parser.soup, additinals_tags=[])
+    parser.soup = remove_spaces_between_tags(parser.soup, additinals_tags=[])
 
     # for e in parser.soup('pre'):
     #     e.name = 'poem'  # 'poem'
@@ -106,25 +147,18 @@ def convert_page(tid):
         t.name = 'p'
 
     html = parser.soup.decode()
-    text = pypandoc.convert_text(html, 'mediawiki', format='html')
+    text = pypandoc.convert_text(html, 'mediawiki', format='html', verify_format=False)
     text = html_.unescape(text.strip('/'))
-
-
 
     # out2 = re.sub('<span id="[^"]+"></span>', '', out2)
 
-
-
     # text = categorization(out2, parser.soup)
-
-
 
     # <span> to <ref>
     text = re.sub(r'\[(ref (?:name|follow)="[^"]+"(?: ?\\)?)\]', r'<\1>', text)
     text = re.sub(r'\[(/ref)\]', r'<\1>', text)
     if '<ref' in text:
         text = '%s\n\n== Примечания ==\n{{примечания}}\n' % text
-
 
     text = re.sub(r'(<div.*?>)(\s+)', r'\2\1', text)
     text = re.sub(r'(\s+)(</div>)', r'\2\1', text)
@@ -146,7 +180,7 @@ def convert_page(tid):
     spans = [t for t in wc.filter_tags() if t.tag == 'span'
              for a in t.attributes if a.name == 'id' and a.value not in links_ids]
     for span in spans: wc.remove(span)
-        # for span in spans: wc.remove(span)
+    # for span in spans: wc.remove(span)
     # out2 = re.sub('<span class="footnote"></span>', '', out2)
 
     # strip параметр в {{right|}}
@@ -168,6 +202,9 @@ def convert_page(tid):
 
     # mwp.parse('{{right|}}').nodes[0]
 
+    for f in wc.filter_wikilinks(matches=lambda x: x.title.lower().startswith('file')):
+        f.title = re.sub(r'^.+?/(text_\d+_).*?/([^/]+)$', r'File:\1\2', str(f.title))
+
     text = str(wc)
 
     # strip text
@@ -178,53 +215,90 @@ def convert_page(tid):
 
 def convert_pages_to_db_with_pandoc_on_several_threads():
     lock = threading.RLock()
-    q = queue.Queue(maxsize=20)
-    db_q = queue.Queue(maxsize=20)
+    q = queue.Queue(maxsize=100)
+    db_q = queue.Queue(maxsize=10)
 
-    def db_save():
+    def db_save_pool():
         while True:
-            while fifo_queue.empty():
+            while db_q.empty():
+                # print(f'db_q.empty')
                 time.sleep(1)
-            r = db_q.get()
-            db.htmls.upsert({'tid': r[0], 'wiki': r[1]}, ['tid'])
-            print('to db', tid)
+            h = db_q.get()
+            db.htmls.upsert({'tid': h.tid, 'wiki': h.wiki}, ['tid'])
             db_q.task_done()
 
     def worker():
         while True:
-            while fifo_queue.empty():
+            while q.empty():
+                # print(f'q.empty')
                 time.sleep(1)
-            r = q.get()
-            # print(f'Working on {item}')
+            h = q.get()
+            # print(h.tid)
             # print(f'Finished {item}')
-            tid = r['tid']
-            html = r['html']
-            text = convert_page(tid)
-            # with lock:
-            #     db.db_htmls.upsert({'tid': tid, 'wiki': text}, ['tid'])
-            db_q.put((tid, text))
-            print('converted', tid)
+            # content_html = get_content_from_html(h.html)
+            h.wiki = convert_page(h.html)
+            h.html = None
+            if h.wiki:
+                # with lock:
+                #     db.db_htmls.upsert({'tid': tid, 'wiki': text}, ['tid'])
+                print('converted, to db', h.tid)
+                db_q.put(h)
+            else:
+                print('no wiki', h.tid)
             q.task_done()
 
-    threading.Thread(target=db_save, daemon=True).start()
-
-    # turn-on the worker thread
-    for r in range(20):
+    threading.Thread(target=db_save_pool, daemon=True, name='db_save_pool').start()
+    # for r in range(50):
+    for r in range(100):
         threading.Thread(target=worker, daemon=True).start()
+
+    count_pages_per_min = 0
+    last_time = datetime.now()
 
     # for tid in [5643]:
     # for r in db.db_htmls.find(db.db_htmls.table.c.wiki.isnot(None)):
-    for r in db.htmls.find(wiki=None):
-        # for r in db.db_htmls.find():
+    # for r in db.htmls.find(wiki=None):
+    # for r in db.db_htmls.find():
+    t = db.all_tables
+    cols = t.table.c
+    tids_got = set()
+    # for r in t.find(cols.title.is_not(None), cols.html.is_not(None), cols.wiki.is_(None)):
+    while True:
         while q.full():
-            time.sleep(1)
-        q.put(r)
+            # print('not q.empty()')
+            time.sleep(10)
+        if q.empty():
+            pool = [r for r in t.find(cols.wiki.is_(None), cols.html.is_not(None), _limit=q.maxsize)]
+            if not pool:
+                break
+            for r in pool:
+                h = H.parse_obj(r)
+                tids_got.add(h.tid)
+                if h.tid in tids_got:
+                    continue
+
+                if last_time < datetime.now():
+                    if last_time.minute < datetime.now().minute:
+                        print(count_pages_per_min)
+                        count_pages_per_min = 0
+                        last_time = datetime.now()
+                    else:
+                        count_pages_per_min += 1
+
+                q.put(h)
 
     # block until all tasks are done
     q.join()
+    db_q.join()
     print('All work completed')
 
 
 if __name__ == '__main__':
-    text = convert_page(tid=1)
-    print()
+    from datetime import datetime
+
+    convert_pages_to_db_with_pandoc_on_several_threads()
+
+    # tid, html, url = get_html(tid=tid)
+    # content_html = get_content_from_html(html)
+    # text = convert_page(content_html)
+    # print()

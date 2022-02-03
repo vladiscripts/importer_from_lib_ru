@@ -94,7 +94,22 @@ def categorization(text, r):
         ('http' in text, 'Страницы с внешними ссылками'),
         # ([e for pre in soup.find_all('pre') for e in pre.find_all('ref')], 'Теги ref внутри pre'),
     ]
+
+    if r['desc']:
+        conditions += [
+            ('перевод' in r['desc'].lower(), 'Указан переводчик в параметре ДРУГОЕ'),
+            ('<i>' in r['desc'], 'Таг i в параметре ДРУГОЕ'),
+            ('<b>' in r['desc'], 'Таг b в параметре ДРУГОЕ'),
+            ('<br' in r['desc'], 'Таг br в параметре ДРУГОЕ'),
+            (len(r['desc']) > 100, 'Длина текста в параметре ДРУГОЕ > 100'),
+            (len(r['desc']) > 200, 'Длина текста в параметре ДРУГОЕ > 200'),
+            (len(r['desc']) > 300, 'Длина текста в параметре ДРУГОЕ > 300'),
+            (len(r['desc']) > 400, 'Длина текста в параметре ДРУГОЕ > 400'),
+            ('<a ' in r['desc'], 'Таг a в параметре ДРУГОЕ'),
+        ]
+
     cats = [f'[[Категория:Импорт/lib.ru/{name}]]' for cond, name in conditions if cond]
+
     cats.append("[[Категория:Импорт/lib.ru]]")
     cats.append(f"[[Категория:{r['name']}]]")
     cats.append(f"[[Категория:Литература {r['year']} года]]")
@@ -110,6 +125,9 @@ def categorization(text, r):
         if author_ := re.search(r'<a .+?>\s*(.*?)\s*</a>', r['author_tag']):
             if author_.group(1) not in ([r['litarea'], r['name']]):
                 cats.append('[[Категория:Импорт/lib.ru/Возможна ошибка указания автора]]')
+
+    # if '<br' in r['desc']:
+    #     cats.append(f"[[Категория:Импорт/lib.ru/Указан переводчик и нет категории перевода]]")
 
     return '\n'.join(cats)
 

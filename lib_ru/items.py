@@ -119,19 +119,23 @@ class WorksItem(Item):
     size = Field()
     year = Field()
 
+# class WorksLoader(ItemLoader):
+#     default_output_processor = TakeFirst()
+#     slug_in = str.strip
+#     desc_in = MapCompose(str.strip, spaces, dashes)
+#     title_in = MapCompose(str.strip, spaces, dashes)
 
-class WorksLoader(ItemLoader):
-    default_output_processor = TakeFirst()
-
-    title_out = TakeFirst()
-    text_in = MapCompose(clear_outer_tag, clean_text, clear_outer_tag, tags2wiki)
-    text_out = TakeFirst()
-    filename_out = TakeFirst()
-    url_article_out = TakeFirst()
+# class WorksLoader(ItemLoader):
+#     default_output_processor = TakeFirst()
+#
+#     title_out = TakeFirst()
+#     text_in = MapCompose(clear_outer_tag, clean_text, clear_outer_tag, tags2wiki)
+#     text_out = TakeFirst()
+#     filename_out = TakeFirst()
+#     url_article_out = TakeFirst()
 
 
 class AuthorAboutItem(Item):
-    author_slug = Field()
     slug = Field()
     image_url = Field()
     desc = Field()
@@ -146,14 +150,15 @@ class AuthorAboutLoader(ItemLoader):
 class AuthorItem(Item):
     slug = Field()
     name = Field()
-    name_for_WS = Field()
-    family_parsed_for_WS = Field()
-    names_parsed_for_WS = Field()
+    name_WS = Field()
+    family_parsed = Field()
+    names_parsed = Field()
     image_url = Field()
     desc = Field()
     live_time = Field()
     town = Field()
     litarea = Field()
+    # desc = Field()
 
     works = Field()
 
@@ -162,6 +167,8 @@ class AuthorLoader(ItemLoader):
     default_input_processor = MapCompose(str.strip, spaces, dashes)
     default_output_processor = TakeFirst()
 
+    desc_in = MapCompose(str.strip, spaces, dashes)
+    desc_out = Compose(Join(), lambda s: s.replace(' )', ')').replace(' ,', ',').replace(' ;', ';'))
     # title_out = TakeFirst()
     # text_in = MapCompose(clear_outer_tag, clean_text, clear_outer_tag, tags2wiki)
     # text_out = TakeFirst()
@@ -173,9 +180,7 @@ class AuthorLoader(ItemLoader):
     works_out = Identity()
 
 
-
 class Text(Item):
-
     tid = Field()
     # slug = Field()
     # categories = Field()
@@ -183,3 +188,14 @@ class Text(Item):
     content = Field()
     wiki = Field()
     wikified = Field()
+
+class Image(Item):
+    id = Field()  # author_id
+    image_filename_wiki = Field()
+    image_urls = Field()
+    images = Field()
+    image_url_filename = Field()
+    slug = Field()
+    author_name = Field()
+    filename = Field()
+

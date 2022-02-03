@@ -5,23 +5,15 @@ from scrapy.linkextractors import LinkExtractor
 from itemloaders.processors import TakeFirst, MapCompose, Join, Compose
 from scrapy.loader import ItemLoader
 from scrapy.selector import Selector
-from lib_ru.items import *
 from urllib.parse import urlsplit, parse_qs, parse_qsl, unquote, quote, urljoin, urlencode, quote_plus
 import requests
 import json
 import time
-import vladi_helpers
-import requests
-# from vladi_helpers import vladi_helpers
-from vladi_helpers.vladi_helpers import url_params_str_to_dict, url_params_str_to_list, \
-    cookies_string_from_Chrome_to_list
-from vladi_helpers.file_helpers import json_save_to_file, json_load_from_file, file_savetext, file_readtext
-from vladi_helpers.vladi_helpers import url_params_str_to_dict, url_params_str_to_list
-import sqlite3
-from lxml.html import fromstring  # import html5lib
-import parsel
-from w3lib.html import remove_tags
-import pandas as pd
+# import sqlite3
+# from lxml.html import fromstring  # import html5lib
+# import parsel
+# from w3lib.html import remove_tags
+# import pandas as pd
 import os
 from pathlib import Path
 from typing import Union
@@ -30,6 +22,8 @@ from bs4 import BeautifulSoup, Comment
 import mwparserfromhell as mwp
 
 from db import *
+from lib_ru.items import *
+
 
 def selector_from_html5(response):
     response = response.replace(encoding='utf-8',
@@ -41,14 +35,15 @@ def selector_from_html5(response):
 class AuthorsSpider(CrawlSpider):
     name = "get_authors_and_titles"
     allow_domains = ['az.lib.ru']
+
     start_urls = [
-        # 'http://az.lib.ru/a/',
+        'http://az.lib.ru/a/',
         # 'http://az.lib.ru/a/ashhacawa_s_m/',
         # 'http://az.lib.ru/h/hartulari_k_f/',
         # 'http://az.lib.ru/l/litoshenko_l_n/',
         # 'http://az.lib.ru/m/munshtejn_l_g/',
         # 'http://az.lib.ru/c/chukowskij_k_i',
-        'http://az.lib.ru/c/chukowskij_k_i/text_1913_poezia_budushego.shtml',
+        # 'http://az.lib.ru/c/chukowskij_k_i/text_1913_poezia_budushego.shtml',
     ]
 
     rules = (
@@ -58,27 +53,32 @@ class AuthorsSpider(CrawlSpider):
              callback='parse_item'),
     )
 
-    def parse_start_url(self, response):
-        """ to testing of scraping of a page """
-        filepath = 'text.html'
-        Path(filepath).write_text(response.text, encoding=response.encoding)
-        html = Path(filepath).read_text(encoding=response.encoding)
+    # def parse_start_url(self, response):
+    #     """ to testing of scraping of a page """
+    #     filepath = 'text.html'
+    #     Path(filepath).write_text(response.text, encoding=response.encoding)
+    #     html = Path(filepath).read_text(encoding=response.encoding)
+    #
+    #     from scrapy.http import HtmlResponse
+    #     r = HtmlResponse(url="my HTML string", body=html, encoding=response.encoding)
+    #     r = selector_from_html5(response)
+    #
+    #     yield item
 
-        from scrapy.http import HtmlResponse
-        r = HtmlResponse(url="my HTML string", body=html, encoding=response.encoding)
-        r = selector_from_html5(response)
-
-        yield item
+    # def start_requests(self):
+    #     yield scrapy.Request('http://az.lib.ru/a/abaza_k_k/', self.parse_item)
+    #     # yield scrapy.Request('http://az.lib.ru/a/abameleklazarew_s_s/', self.parse_item)
+    #     # yield scrapy.Request('http://az.lib.ru/m/maksimow_s_w/', self.parse_item)
 
     def parse_item(self, response):
         response = selector_from_html5(response)
         l = AuthorLoader(AuthorItem(), response)
 
-        author_slug = urlsplit(response.url).path.rstrip('/')
-        l.add_value('slug', author_slug)
+        slug = urlsplit(response.url).path.rstrip('/')
+        l.add_value('slug', slug)
 
         # l.add_css('author_name', 'h2::text', re=r':\s*(.*?)\s*:')
-        author_name = response.css('h2::text').re_first(r':\s*(.*?)\s*:')
+        author_name = response.css('h2 ::text').re_first(r':\s*(.*?)\s*:')
         # todo: в author_name и БД по паттерну r':\s*(.*?)\s*:' попали категории вроде "американская литература"
         #  http://az.lib.ru/a/amerikanskaja_literatura/
         #  на этих страницах также есть тексты анонимов http://az.lib.ru/a/amerikanskaja_literatura/text_1874_zhenskaya_voyna_oldorfo.shtml
@@ -86,11 +86,15 @@ class AuthorsSpider(CrawlSpider):
         #  но в БД он не попал, поскольку использована insert_ignore по unique title_slug
         #  Надо перезагрузить тексты. Данные об авторе брать из шапок текстов, а не со страницы авторов.
         l.add_value('name', author_name)
-        l.add_value('name_for_WS', author_name)
         family, _, names = author_name.partition(' ')
-        # l.add_value('name_parsed_for_WS', f'{names} {family}')
-        l.add_value('family_parsed_for_WS', family)
-        l.add_value('names_parsed_for_WS', names)
+        # l.add_value('name_parsed', f'{names} {family}')
+        l.add_value('family_parsed', family)
+        l.add_value('names_parsed', names)
+        l.add_value('name_WS', f'{names} {family}')
+
+        # l.add_xpath('desc', '//b/font[contains(.,"Об авторе:")]/../following::i', TakeFirst(),
+        #             re=r'(?s)^<i>(?:\s|--)*(.*?)\s*</i>$')
+        # l.get_xpath('//b/font[contains(.,"Об авторе:")]/../following-sibling::i')
 
         # import w3lib.html
         # w3lib.html.remove_tags('a')
@@ -141,27 +145,54 @@ class AuthorsSpider(CrawlSpider):
         yield l.load_item()
 
         yield response.follow(response.url + 'about.shtml', callback=self.parse_about_page,
-                              cb_kwargs={'author_slug': author_slug})
+                              cb_kwargs={'slug': slug})
 
     def get_texts_metadata(self, response):
-        t = [dict(
-            slug=w.css('a ::attr(href)').get(),  # 'a[href^="text_"] ::attr(href)'
-            title=w.css('a ::text').get(),
-            desc=''.join(w.css('dd').getall()),
-            oo=bool(w.xpath('b[contains(.,"Ѣ")]').get()),
-            size=w.css('b ::text').re_first(r'(\d+)k'),
-            year=w.css('small ::text').re_first(r'\[(.*?)\]')
-        ) for w in response.xpath('//dt/li/a[starts-with(@href, "text_")]/ancestor::li')]
+        t = []
+        for w in response.xpath('//dt/li/a[starts-with(@href, "text_")]/ancestor::li'):
+            d = dict(
+                slug=w.css('a ::attr(href)').get(),  # 'a[href^="text_"] ::attr(href)'
+                title=w.css('a ::text').get(),
+                desc=''.join(w.css('dd').getall()),
+                oo=bool(w.xpath('b[contains(.,"Ѣ")]').get()),
+                size=w.css('b ::text').re_first(r'(\d+)k'),
+                year=w.css('small ::text').re_first(r'\[(.*?)\]')
+            )
+            if d['slug']:
+                d['slug'] = d['slug'].strip()
+                d['text_url'] = response.url + d['slug']
+            t.append(d)
         return t
 
-    def parse_about_page(self, response, author_slug):
+    def parse_about_page(self, response, slug):
         response = selector_from_html5(response)
         g = AuthorAboutLoader(AuthorAboutItem(), response)
-        g.add_value('author_slug', author_slug)
+        g.add_value('slug', slug)
         main_block = g.nested_xpath('//noindex[1]')
-        main_block.add_css('image_url',
-                           'img ::attr(src)')  # todo: записываются в базу сторонние ссылки, проверить на /a/adamowich_j_a
-        main_block.add_css('desc', 'dd', re=r'^(?:\s|--)*(.*?)\s*$')
+        main_block.add_xpath('image_url', './img/@src', TakeFirst())
+        # main_block.add_css('image_url',
+        #                    'img ::attr(src)')  # todo: записываются в базу сторонние ссылки, проверить на /a/adamowich_j_a
+        # g.selector.xpath('//b/font[contains(.,"Об авторе:")]/following::dd[1]').get()
+
+        main_block.add_xpath(
+            'desc', './comment()[contains(.,"Собственно произведение")]/parent::noindex',
+            TakeFirst(),
+            lambda x: re.sub(r'(?s)(<!--.+?-->|<img [^>]+>|</?noindex>|<br clear="all">)*', '', x),  # лишние теги
+            lambda x: re.sub(r'(?s)^(?:\s|--|<dd>|<pre>)*(.*?)(?:\s|</dd>|</pre>)*$', r'\1', x),  # strip пробелы и '--'
+            re=r'(?s)<!--*[^>]*?Собственно произведение[^>]*?-*->(.+?)<!--+-->')  # брать между тегами комментариев
+        # main_block.get_xpath('./comment()[contains(.,"Собственно произведение")]/parent::noindex',
+        #                      TakeFirst(),
+        #                      lambda x: re.sub('(?s)(<!--.+?-->|<img [^>]+>|</?noindex>|<br clear="all">)*', '', x),
+        #                      str.strip)
+        # main_block.get_xpath('./comment()[contains(."Собственно произведение")]', re=r'(?s)^(?:<dd>)*(?:\s|--)*(.*?)\s*<!--')
+        # main_block.add_xpath('desc', './comment()[contains(."Собственно произведение")]/../noindex')
+        # main_block.add_xpath('desc', './dd', re=r'(?s)^(?:<dd>)*(?:\s|--)*(.*?)\s*<!--')
+        # main_block.add_xpath('desc', './dd', re=r'(?s)^(?:<dd>)*(?:\s|--)*(.*?)\s*<!--')
+        # g.get_collected_values('desc')
+        # main_block.get_xpath('./dd', re=r'(?s)^(?:<dd>)*(?:\s|--)*(.*?)\s*<!--')
+        # main_block.add_css('desc', 'dd', re=r'^(?:\s|--)*(.*?)\s*$')
+        # main_block.add_css('desc', 'dd', re=r'^(?:\s|--)*(.*?)\s*$')
+        # yield g.load_item()
         yield g.load_item()
 
     # def parse_json(self, response):

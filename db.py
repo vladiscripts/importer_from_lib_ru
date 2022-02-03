@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
-import requests
-# from vladi_helpers import vladi_helpers
-from vladi_helpers.vladi_helpers import url_params_str_to_dict, url_params_str_to_list, \
-    cookies_string_from_Chrome_to_list
-from vladi_helpers.file_helpers import json_save_to_file, json_load_from_file, file_savetext, file_readtext
-from vladi_helpers.vladi_helpers import url_params_str_to_dict, url_params_str_to_list
-import sqlite3
+# import requests
+# import sqlite3
 import json
-from lxml.html import fromstring  # import html5lib
-import parsel
+# from lxml.html import fromstring  # import html5lib
+# import parsel
 from urllib.parse import urlsplit, parse_qs, parse_qsl, unquote, quote, urlencode, urlunsplit
-import pandas as pd
 import os, io
 from pathlib import Path
 import dataset
@@ -23,9 +17,13 @@ db_lock = RLock()
 
 # crawler.db = dataset.connect('sqlite:///db.sqlite', engine_kwargs=dict(echo=False))
 # db = dataset.connect('sqlite:////home/vladislav/var/from_lib_ru.sqlite')
-db = dataset.connect('sqlite:////home/vladislav/var/db/from_lib_ru.sqlite',
-                     engine_kwargs={'connect_args': {'check_same_thread': False}})
-# db = dataset.connect(f'mysql+pymysql://root:root@localhost/lib_ru')
+# db = dataset.connect('sqlite:////home/vladislav/var/db/from_lib_ru.sqlite',
+#                      engine_kwargs={'connect_args': {'check_same_thread': False}})
+# db1 = dataset.connect('sqlite:////home/vladislav/var/db/from_lib_ru.sqlite',
+#                       engine_kwargs={'connect_args': {'check_same_thread': False}})
+db_host, db_user, db_pw = os.getenv('DB_HOST'),  os.getenv('DB_USER'),  os.getenv('DB_PASSWORD')
+db_url = f'mysql+pymysql://{db_user}:{db_pw}@{db_host}/lib_ru'
+db = dataset.connect(db_url, engine_kwargs=dict(echo=False))  #pool_size=10, max_overflow=20
 T = db.types
 
 authors = db['authors']
@@ -47,8 +45,8 @@ texts_categories.create_column('tid', T.integer)
 texts_categories.create_column('category_id', T.integer)
 texts_categories.create_index(['tid', 'category_id'], unique=True)
 
-htmls = db.create_table('htmls', primary_id='tid', primary_increment=False)
-# htmls.create_column('tid', T.integer, unique=True, nullable=False)
+htmls = db.create_table('htmls')
+htmls.create_column('tid', T.integer, unique=True, nullable=False)
 htmls.create_column('html', T.text)
 # htmls.create_column('content', LONGTEXT)
 htmls.create_column('wiki', T.text)
@@ -56,15 +54,22 @@ htmls.create_column('wikified', T.text)
 htmls.create_column('wiki_page', T.text)
 htmls.create_column('wiki_title', T.text)
 
-db_wiki = db.create_table('wiki', primary_id='tid', primary_increment=False)
+# db_wiki = db.create_table('wiki', primary_id='tid', primary_increment=False)
 # db_wiki.create_column('wiki', T.integer, unique=True, nullable=False)
 # db_wiki.create_column('text', T.text)
 
+images = db.create_table('images')
+images.create_column('tid', T.integer, nullable=False)
+images.create_column('url', T.string(length=500), nullable=False)
+images.create_column('filename', T.string(length=500), nullable=False)
+images.create_column('filename_wiki', T.string(length=500), unique=True)
+
+wikisource_listpages = db.create_table('wikisource_listpages', primary_id='id', primary_increment=True)
 
 all_tables = db['all_tables']
 
 sql = '''
-CREATE VIEW all_tables as
+CREATE VIEW all_tables  as
       select
              a.slug as author_slug,
              a.name,

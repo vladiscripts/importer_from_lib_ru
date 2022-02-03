@@ -43,14 +43,24 @@ def get_html(tid=None):
     #     db_wiki.insert({'tid': r['tid'], 'wiki': wiki}, ensure=True)
 
     if m := re_get_content_html.search(html):
+        html = get_content_from_html(html)
+
+        return tid, html, text_url
+
+def get_content_from_html(html:str) -> str:
+    if m := re_get_content_html.search(html):
         html = m.group(1)
         html = re.sub(r'</?xxx7>', '', html)
         html = html_.unescape(html)
         html = re_spaces_many_no_newlines.sub(' ', html)  #   и множественные пробелы, без переводов строк
         html = re.sub(r'<p( [^>]*)?>\s*(<br>)+', r'<p\1>', html, flags=re.I)
 
-        return tid, html, text_url
+        return html
 
+def get_content_from_html_soup(soup)->str:
+    content = soup.find(text=lambda x: isinstance(x, Comment) and 'Собственно произведение' in x). \
+        find_parent('noindex')
+    return content
 
 def db_write_content_html():
     for r in db.htmls.all():

@@ -1,8 +1,6 @@
 from urllib.parse import urlsplit, parse_qs, parse_qsl, unquote, quote, urljoin, urlencode, quote_plus
-import requests
-from vladi_helpers.file_helpers import json_save_to_file, json_load_from_file, file_savetext, file_readtext
-from vladi_helpers.vladi_helpers import url_params_str_to_dict, url_params_str_to_list
-import parsel
+# import requests
+# import parsel
 import os
 from pathlib import Path
 import re
@@ -18,7 +16,8 @@ class LibRu(HtmltoWikiBase):
 
     def make_soup(self, html):
         self.html_origin = html
-        self.soup = BeautifulSoup(html, 'html5lib')
+        soup = BeautifulSoup(html, 'html5lib')
+        return soup
 
     def make_soup_via_parser(self, html):
         self.html_origin = html
@@ -50,9 +49,7 @@ class LibRu(HtmltoWikiBase):
 
         self.soup = soup
 
-    def parsing_extentions(self):
-        soup = self.soup
-
+    def parsing_extentions(self,soup):
         find_and_combine_tags(soup, 'div', {'align': 'center'})
 
         # ошибочные <div> в [<p>, <dd>], вынуть
@@ -83,6 +80,8 @@ class LibRu(HtmltoWikiBase):
             if link := e.attrs.get('href'):
                 if link == 'http://az.lib.ru' and link == e.text:
                     e.extract()
+                elif e.text.strip() == '' or link.rstrip('/') == e.text.strip().rstrip('/'):
+                    e.unwrap()
                 elif link == e.text or 'smalt.karelia.ru' in link:
                     e.unwrap()
 
@@ -98,7 +97,7 @@ class LibRu(HtmltoWikiBase):
         #     c.extract()
 
         # заголовки
-        self.headers_clean()
+        soup = self.headers_clean(soup)
 
         # for tag in soup.find_all('dd'):
         #     tag.name = 'p'
@@ -111,11 +110,9 @@ class LibRu(HtmltoWikiBase):
             e.unwrap()
 
     # [e for e in parser.soup.find_all(text=lambda x: is_string(x) and x in ['* * *', '***'])]
+        return soup
 
-
-    def headers_clean(self):
-        soup = self.soup
-
+    def headers_clean(self, soup):
         for h_ in header_tag_names:
             for h in soup.find_all(h_):
 
@@ -138,7 +135,7 @@ class LibRu(HtmltoWikiBase):
                         img.parent.unwrap()
 
                     h.insert_after(img)
-                    nt = soup.new_tag('center')
+                    nt = self.soup.new_tag('center')
                     img.wrap(nt)
 
                 for p in h.find_all('p'):
@@ -169,7 +166,7 @@ class LibRu(HtmltoWikiBase):
 
         p_in_headers(soup)
 
-
+        return soup
 
 if __name__ == '__main__':
     tid, html, url = get_html()

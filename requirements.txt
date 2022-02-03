@@ -1,5 +1,12 @@
-sqlalchemy
+scrapy
+itemloaders
+html5lib
+parsel
+bs4
 pymysql
+sqlalchemy
 sqlalchemy_utils
 dataset
-itemloaders
+mwparserfromhell
+pydantic
+pypandoc

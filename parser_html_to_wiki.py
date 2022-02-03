@@ -1,6 +1,5 @@
 import types
 from typing import Union, List
-import deprecation
 import re
 from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 import html as html_
@@ -59,20 +58,20 @@ class HtmltoWikiBase:
 
         dev_to_center(soup)
 
-    def inline_tags(self):
-        soup = self.soup
+    def inline_tags(self, soup):
 
         # *** inline-теги
         unwrap_empty_inline_tags(soup)  # пустые inline-теги ['i', 'b', 'em', 'strong']
 
         for tag_name in ['b', 'strong', 'i', 'em', 'emphasis', 'sup', 'sub']:  # 'span'
-            find_and_combine_tags(soup, tag_name)
+            soup=find_and_combine_tags(soup, tag_name)
 
             # Main markup
         replace_tag_with_wikimarkup(soup, 'i', "''")
         replace_tag_with_wikimarkup(soup, 'em', "''")
         replace_tag_with_wikimarkup(soup, 'b', "'''")
         replace_tag_with_wikimarkup(soup, 'strong', "'''")
+        return soup
 
     def spaces_newlines_strip(self):
         soup = self.soup
@@ -494,6 +493,7 @@ def move_corner_spaces_from_tags(soup):
                         if spaces := re_end_spaces_with_newlines.search(s):
                             s.replace_with(spaces.re.sub('', spaces.string))
                             e.insert_after(spaces.group(1))
+    return soup
 
 
 def unwrap_empty_inline_tags(soup, additinals_tags=[]):
@@ -639,6 +639,7 @@ def remove_spaces_between_tags(soup, additinals_tags=[]):
         for e in soup.find_all(tag_name):
             a(e.previous_sibling, look_begin=True)
             a(e.next_sibling, look_begin=False)
+    return soup
 
 
 def spaces_and_newlines_between_tags(soup):
@@ -697,7 +698,7 @@ def find_and_combine_tags(soup, init_tag_name: str, init_tag_attrs: dict = None)
 
     def fill_next_siblings(tag, init_tag_name: str, ignoring_tags_names: list) -> list:
         next_siblings = []
-        # next_siblings_all = list(tag.next_siblings)
+        next_siblings_all = list(tag.next_siblings)
         for t in tag.next_siblings:
             if is_string(t) and re_symbols_ignore and re_symbols_ignore.match(t):
                 next_siblings.append(t)
@@ -741,13 +742,13 @@ def find_and_combine_tags(soup, init_tag_name: str, init_tag_attrs: dict = None)
     # Some symbols between same tags can add into them. Because they don't changing of font style.
     if init_tag_name == 'i':
         # Italic doesn't change the style of some characters (spaces, period, comma), so they can be combined
-        re_symbols_ignore = re.compile(r'^[\s.,-]+$')
+        re_symbols_ignore = re.compile(r'^\s*|[.,-]$')
     elif init_tag_name == 'b':
         # Bold changes the style of all characters
-        re_symbols_ignore = re.compile(r'^\s+$')
+        re_symbols_ignore = re.compile(r'^\s*$')
     elif init_tag_name == 'div':
         # Here should be careful with merging, because a html can have some `\n` between block tags (like `div`s)
-        re_symbols_ignore = re.compile(r'^\s+$')
+        re_symbols_ignore = re.compile(r'^\s*$')
     else:
         re_symbols_ignore = None
 

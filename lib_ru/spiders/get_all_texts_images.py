@@ -22,7 +22,7 @@ from threading import RLock
 from bs4 import BeautifulSoup, Comment
 
 import db
-from lib_ru.items import Text
+from lib_ru.items import WorksItem as Item, Text
 
 
 def selector_from_html5(response):
@@ -33,14 +33,14 @@ def selector_from_html5(response):
     return response
 
 
-class TextSpider(CrawlSpider):
-    name = "get_all_texts"
+class TextImagesSpider(CrawlSpider):
+    name = "get_all_texts_images"
     # allow_domains = ['az.lib.ru']
-    # start_urls = [
-    #     'http://az.lib.ru/a/',
-    #     # 'http://az.lib.ru/a/ashhacawa_s_m/',
-    #     # 'http://az.lib.ru/c/chukowskij_k_i/text_1913_poezia_budushego.shtml',
-    # ]
+    start_urls = [
+        # 'http://az.lib.ru/a/',
+        # 'http://az.lib.ru/a/ashhacawa_s_m/',
+        'http://az.lib.ru/d/defo_d/text_0100oldorfo.shtml',
+    ]
 
     # rules = (
     #     # Rule(LinkExtractor(allow=r'/text_', restrict_css="li a", allow_domains='az.lib.ru'), callback='parse_item'),
@@ -171,13 +171,17 @@ class TextSpider(CrawlSpider):
         # t = {'url': 'http://az.lib.ru/d/dikkens_c/text_0110oldorfo.shtml', 'id': 29468}
         # yield scrapy.Request(t['url'], callback=self.save_html_to_db, cb_kwargs={'tid': t['id']})
 
-        # for a in db.authors.all():
-        #     # col = db.all_tables.table.c.html
-        #     # for t in db.all_tables.find(col.is_(None), author_id=a['id']):
-        #     for t in db.titles.find(html=None):
-        #         yield scrapy.Request(t['text_url'], callback=self.save_html_to_db, cb_kwargs={'tid': t['id']})
-        for t in db.all_tables.find(html=None, text_url={'!=': None}):
-            yield scrapy.Request(t['text_url'], callback=self.save_html_to_db, cb_kwargs={'tid': t['tid']})
+        for r in db.all_tables.all():
+            # col = db.all_tables.table.c.html
+            # for t in db.all_tables.find(col.is_(None), author_id=a['id']):
+            yield scrapy.Request(r['text_url'], callback=self.save_html_to_db,
+                                 cb_kwargs={'tid': t['tid'], 'tid': t['tid']})
+
+        for r in db.all_tables.all():
+            # col = db.all_tables.table.c.html
+            # for t in db.all_tables.find(col.is_(None), author_id=a['id']):
+            yield scrapy.Request(r['text_url'], callback=self.save_html_to_db,
+                                 cb_kwargs={'tid': t['tid'], 'tid': t['tid']})
 
     # def parse_start_url(self, response):
     def parse_item(self, response, slug):
@@ -202,7 +206,7 @@ class TextSpider(CrawlSpider):
 
         i = Text()
 
-        # slug = 'l'
+        slug = 'l'
         i['slug'] = slug
         # i['categories'] = categories
         # i['categories'] = []
@@ -234,17 +238,17 @@ class TextSpider(CrawlSpider):
         #
         # content = r.xpath('//noindex//comment()[contains(.,"Собственно произведение")]/parent::noindex').get()
 
-        i = Text({
-            'tid': tid,
-            'html': response.text
-        })
+        i = Text()
 
-
+        i['tid'] = tid
         # i['slug'] = t_slug
         # i['categories'] = categories
         # i['categories'] = []
         # i['html'] = content
         # i['html'] = response.text
+
+        db.htmls.upsert({'tid': tid, 'html': response.text}, ['tid'])
+        # db.htmls.insert({'tid': tid, 'html': response.text}, ensure=True)
 
         yield i
 
