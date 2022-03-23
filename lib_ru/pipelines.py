@@ -19,28 +19,24 @@ class LibRuPipeline(object):
 
     def process_item(self, item, spider):
 
-        match item:
-            case Text():
-                db.htmls.upsert(item, ['tid'])
+        if isinstance(item, Text):
+            db.htmls.upsert(item, ['tid'])
 
-            case AuthorItem():
-                with db.db_lock:
-                    a = db.authors.find_one(slug=item['slug'])
-
-                    if not a:
-                        works = item['works']
-                        del item['works']
-                        db.authors.upsert(item, ['slug'], ensure=True)
-
-                        a = db.authors.find_one(slug=item['slug'])
-                        for w in works:  w.update({'author_id': a['id']})
-                        db.titles.insert_many(works, ensure=True)
-
-            case AuthorAboutItem():
+        elif isinstance(item, AuthorItem):
+            with db.db_lock:
+                works = item['works']
+                del item['works']
                 db.authors.upsert(item, ['slug'], ensure=True)
+                a = db.authors.find_one(slug=item['slug'])
+                for w in works:
+                    w.update({'author_id': a['id']})
+                    db.titles.upsert(w, ['author_id', 'slug'], ensure=True)
 
-            case Image():
-                db.authors.update(item, ['id'], ensure=True)
+        elif isinstance(item, AuthorAboutItem):
+            db.authors.upsert(item, ['slug'], ensure=True)
+
+        elif isinstance(item, Image):
+            db.authors.update(item, ['id'], ensure=True)
 
             # case WorksItem():
             #     with db.db_lock:

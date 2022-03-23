@@ -84,6 +84,8 @@ class LibRu(HtmltoWikiBase):
                     e.unwrap()
                 elif link == e.text or 'smalt.karelia.ru' in link:
                     e.unwrap()
+                elif link.startswith('file:'):
+                    e.unwrap()
 
 
 

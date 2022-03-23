@@ -29,6 +29,9 @@ T = db.types
 authors = db['authors']
 authors.create_column('slug', T.string, unique=True)
 
+authors_with_cat = db['authors_with_cat']
+authors_categories = db['authors_categories']
+
 titles = db['titles']
 titles.create_column('slug', T.string)
 titles.create_column('author_id', T.integer, nullable=False)
@@ -54,15 +57,18 @@ htmls.create_column('wikified', T.text)
 htmls.create_column('wiki_page', T.text)
 htmls.create_column('wiki_title', T.text)
 
+desc = db.create_table('desc_')
+desc.create_column('tid', T.integer, unique=True, nullable=False)
+
 # db_wiki = db.create_table('wiki', primary_id='tid', primary_increment=False)
 # db_wiki.create_column('wiki', T.integer, unique=True, nullable=False)
 # db_wiki.create_column('text', T.text)
 
 images = db.create_table('images')
 images.create_column('tid', T.integer, nullable=False)
-images.create_column('url', T.string(length=500), nullable=False)
+images.create_column('urn', T.string(length=500), nullable=False)
 images.create_column('filename', T.string(length=500), nullable=False)
-images.create_column('filename_wiki', T.string(length=500), unique=True)
+images.create_column('name_ws', T.string(length=500), unique=True)
 
 wikisource_listpages = db.create_table('wikisource_listpages', primary_id='id', primary_increment=True)
 

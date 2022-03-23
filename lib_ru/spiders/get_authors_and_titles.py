@@ -65,10 +65,11 @@ class AuthorsSpider(CrawlSpider):
     #
     #     yield item
 
-    # def start_requests(self):
-    #     yield scrapy.Request('http://az.lib.ru/a/abaza_k_k/', self.parse_item)
-    #     # yield scrapy.Request('http://az.lib.ru/a/abameleklazarew_s_s/', self.parse_item)
-    #     # yield scrapy.Request('http://az.lib.ru/m/maksimow_s_w/', self.parse_item)
+    def start_requests(self):
+        # urls = ['http://az.lib.ru/a/adamow_g/'] # 'http://az.lib.ru/a/abameleklazarew_s_s/', 'http://az.lib.ru/m/maksimow_s_w/'
+        urls = {url.rpartition('/')[0] for url in Path('urls_of_texts_to_scrape.txt').read_text().splitlines()}
+        for url in urls:
+            yield scrapy.Request(url, self.parse_item)
 
     def parse_item(self, response):
         response = selector_from_html5(response)
@@ -152,7 +153,7 @@ class AuthorsSpider(CrawlSpider):
         for w in response.xpath('//dt/li/a[starts-with(@href, "text_")]/ancestor::li'):
             d = dict(
                 slug=w.css('a ::attr(href)').get(),  # 'a[href^="text_"] ::attr(href)'
-                title=w.css('a ::text').get(),
+                title=w.css('a[href] ::text').get(),
                 desc=''.join(w.css('dd').getall()),
                 oo=bool(w.xpath('b[contains(.,"Ѣ")]').get()),
                 size=w.css('b ::text').re_first(r'(\d+)k'),

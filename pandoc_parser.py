@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 import time
+from datetime import datetime
 import re
 import threading, queue
+import sqlalchemy.exc
+from pathlib import Path
 from typing import Optional, Union, Tuple, List
 from pydantic import BaseModel, ValidationError, Field, validator, root_validator, Extra
 from pydantic.dataclasses import dataclass
@@ -16,11 +19,19 @@ from html2wiki import LibRu
 from parser_html_to_wiki import *
 
 
+class Image(BaseModel):
+    tid: int
+    urn: str
+    filename: str
+    name_ws: str
+
+
 class H(BaseModel):
     tid: int
     html: str
     soup: Optional[BeautifulSoup]
     wiki: Optional[str]
+    images: List[Image] = []
 
     class Config:
         # validate_assignment = True
@@ -100,7 +111,7 @@ def tags_a_refs(soup):
     return soup
 
 
-def convert_page(source):
+def convert_page(h: H):
     parser = LibRu()
 
     # match source:
@@ -113,15 +124,17 @@ def convert_page(source):
     #     case _:
     #         raise Exception('source :BeautifulSoup | Tag | str')
 
-    if isinstance(source, (BeautifulSoup, Tag)):
-        soup = source
-    elif isinstance(source, str):
-        # parser.content = get_content_from_html_soup(d.soup)
-        input_html = get_content_from_html(source)
-        input_html
-        parser.soup = BeautifulSoup(input_html, 'html5lib')
-    else:
-        raise Exception('source :BeautifulSoup | Tag | str')
+    # source = h.html
+    # if isinstance(source, (BeautifulSoup, Tag)):
+    #     soup = source
+    # elif isinstance(source, str):
+    #     # parser.content = get_content_from_html_soup(d.soup)
+    #     input_html = get_content_from_html(source)
+    #     parser.soup = BeautifulSoup(input_html, 'html5lib')
+    # else:
+    #     raise Exception('source :BeautifulSoup | Tag | str')
+    input_html = get_content_from_html(h.html)
+    parser.soup = BeautifulSoup(input_html, 'html5lib')
 
     # parser.input_html = get_content_from_html(h.html)
     # parser.soup = d.soup
@@ -184,11 +197,10 @@ def convert_page(source):
     # out2 = re.sub('<span class="footnote"></span>', '', out2)
 
     # strip параметр в {{right|}}
-    for t in [t for t in wc.filter_templates(matches=lambda x: x.name == 'right')]:
-        if t.params[0].value.strip() == '':
-            wc.remove(t)
-        else:
-            t.params[0].value = t.params[0].value.strip()
+    for t in wc.filter_templates(matches=lambda x: x.name == 'right'):
+        t.params[0].value = t.params[0].value.strip()
+    for t in wc.filter_templates(matches=lambda x: x.name == 'right' and x.params[0].value == ''):
+        wc.remove(t)
 
     # for t in [t for t in wc.filter_tags(matches=lambda x: x.tag == 'div')]:
     #     t.params[0].value = t.params[0].value.strip()
@@ -202,20 +214,41 @@ def convert_page(source):
 
     # mwp.parse('{{right|}}').nodes[0]
 
-    for f in wc.filter_wikilinks(matches=lambda x: x.title.lower().startswith('file')):
-        f.title = re.sub(r'^.+?/(text_\d+_).*?/([^/]+)$', r'File:\1\2', str(f.title))
+    wc, h = process_images(wc, h)
 
     text = str(wc)
 
     # strip text
-    text = strip_wikitext(text)
+    h.wiki = strip_wikitext(text)
 
-    return text
+    return h
+
+
+def process_images(wc: mwp.wikicode.Wikicode, h):
+    """ to simple names of images """
+    for f in wc.filter_wikilinks(matches=lambda x: x.title.lower().startswith('file')):
+        link = re.sub('^[Ff]ile:', '', str(f.title))
+        p = Path(link)
+        # f.title = re.sub(r'^.+?/(text_\d+_).*?/([^/]+)$', r'File:\1\2', str(f.title))
+        # name_ws = re.search(r'^(text_\d+_).+', p.parts[-2]).group(1) + p.name
+        try:
+            p.parts[-2]
+        except IndexError as e:
+            continue
+        name_ws = f'{p.parts[-2]}_{p.name}'
+        f.title = 'File:' + name_ws
+        img = Image(tid=h.tid, urn=link, filename=p.name, name_ws=name_ws)
+        h.images.append(img)
+    return wc, h
+
+
+count_pages_per_min = 0
+last_time = datetime.now()
 
 
 def convert_pages_to_db_with_pandoc_on_several_threads():
     lock = threading.RLock()
-    q = queue.Queue(maxsize=100)
+    q = queue.Queue(maxsize=40)
     db_q = queue.Queue(maxsize=10)
 
     def db_save_pool():
@@ -224,7 +257,24 @@ def convert_pages_to_db_with_pandoc_on_several_threads():
                 # print(f'db_q.empty')
                 time.sleep(1)
             h = db_q.get()
-            db.htmls.upsert({'tid': h.tid, 'wiki': h.wiki}, ['tid'])
+
+            # if last_time < datetime.now():
+            #     if last_time.minute < datetime.now().minute:
+            #         print(count_pages_per_min)
+            #         count_pages_per_min = 0
+            #         last_time = datetime.now()
+            #     else:
+            #         count_pages_per_min += 1
+
+            rows = [img.dict() for img in h.images]
+            with lock:
+                # try:
+                #     db.images.insert_many(rows)
+                # except sqlalchemy.exc.IntegrityError as e:
+                for row in rows:
+                    db.images.insert_ignore(row, ['tid', 'name_ws'])
+                db.htmls.upsert({'tid': h.tid, 'wiki': h.wiki}, ['tid'])
+
             db_q.task_done()
 
     def worker():
@@ -236,7 +286,7 @@ def convert_pages_to_db_with_pandoc_on_several_threads():
             # print(h.tid)
             # print(f'Finished {item}')
             # content_html = get_content_from_html(h.html)
-            h.wiki = convert_page(h.html)
+            h = convert_page(h)
             h.html = None
             if h.wiki:
                 # with lock:
@@ -248,12 +298,8 @@ def convert_pages_to_db_with_pandoc_on_several_threads():
             q.task_done()
 
     threading.Thread(target=db_save_pool, daemon=True, name='db_save_pool').start()
-    # for r in range(50):
-    for r in range(100):
+    for r in range(q.maxsize):
         threading.Thread(target=worker, daemon=True).start()
-
-    count_pages_per_min = 0
-    last_time = datetime.now()
 
     # for tid in [5643]:
     # for r in db.db_htmls.find(db.db_htmls.table.c.wiki.isnot(None)):
@@ -261,31 +307,52 @@ def convert_pages_to_db_with_pandoc_on_several_threads():
     # for r in db.db_htmls.find():
     t = db.all_tables
     cols = t.table.c
-    tids_got = set()
+    # tids_got = set()
     # for r in t.find(cols.title.is_not(None), cols.html.is_not(None), cols.wiki.is_(None)):
+
+    # for r in t.find(cols.wiki.is_(None), cols.html.is_not(None)):
+    #     if last_time < datetime.now():
+    #         if last_time.minute < datetime.now().minute:
+    #             print(count_pages_per_min)
+    #             count_pages_per_min = 0
+    #             last_time = datetime.now()
+    #         else:
+    #             count_pages_per_min += 1
+    #
+    #     q.put(H.parse_obj(r))
+    #
+    #     while q.unfinished_tasks > 0:
+    #         # print('not q.empty()')
+    #         time.sleep(3)
+    #
+    # # block until all tasks are done
+    # q.join()
+    # db_q.join()
+    # print('All work completed')
+
+    offset = 0
     while True:
-        while q.full():
-            # print('not q.empty()')
-            time.sleep(10)
-        if q.empty():
-            pool = [r for r in t.find(cols.wiki.is_(None), cols.html.is_not(None), _limit=q.maxsize)]
-            if not pool:
+        pool = [H.parse_obj(r) for r in
+                t.find(cols.wiki.is_(None), cols.html.is_not(None), _limit=q.maxsize, _offset=offset)
+                # t.find(tid=87568, _limit=q.maxsize, _offset=offset)
+                # t.find(wiki={'like':'%[[File:%'}, _limit=q.maxsize, _offset=offset)
+                ]
+        if not pool:
+            if offset == 0:
                 break
-            for r in pool:
-                h = H.parse_obj(r)
-                tids_got.add(h.tid)
-                if h.tid in tids_got:
-                    continue
+            else:
+                offset = 0
+        offset += q.maxsize
+        for h in pool:
+            # if h.tid in tids_got:
+            #     continue
+            # tids_got.add(h.tid)
 
-                if last_time < datetime.now():
-                    if last_time.minute < datetime.now().minute:
-                        print(count_pages_per_min)
-                        count_pages_per_min = 0
-                        last_time = datetime.now()
-                    else:
-                        count_pages_per_min += 1
+            q.put(h)
 
-                q.put(h)
+        while q.unfinished_tasks > 0:
+            # print('not q.empty()')
+            time.sleep(3)
 
     # block until all tasks are done
     q.join()
@@ -294,8 +361,6 @@ def convert_pages_to_db_with_pandoc_on_several_threads():
 
 
 if __name__ == '__main__':
-    from datetime import datetime
-
     convert_pages_to_db_with_pandoc_on_several_threads()
 
     # tid, html, url = get_html(tid=tid)

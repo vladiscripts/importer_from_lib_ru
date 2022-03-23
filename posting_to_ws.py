@@ -49,7 +49,9 @@ def make_wikititle(r):
     return title
 
 def posting():
-    for r in db.all_tables.find(db.all_tables.table.c.wiki_page.isnot(None)):
+    t = db.all_tables
+    cols = t.table.c
+    for r in db.all_tables.find(cols.wiki.isnot(None)):
 
         # d = D(author=r['name'],
         #       title=r['title'],
