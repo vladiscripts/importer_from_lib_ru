@@ -29,7 +29,7 @@ class CategoriesbyAuthors(BaseModel):
 class X(D):
     oo: bool
     title_ws: str
-    desc: str = Field(..., alias='text_desc')
+    desc: str = Field(..., alias='text_desc_raw')
     author_tag: Optional[str]
     lang: str = ''
     year_dead: Optional[int]

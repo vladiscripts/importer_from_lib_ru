@@ -1,28 +1,33 @@
-from typing import Union, List
-import re
-
-re_spaces = re.compile(r'\s*')
-
-
-def wikify(text: str):
-    text = text.replace('&#1122;', 'Ѣ').replace('&#1123;', 'ѣ').replace('&amp;#1122;', 'Ѣ').replace('&amp;#1123;', 'ѣ')
-
-    text = re.sub(r'^(--|-)\s*(?!\w)', '— ', text)
-    return text
+# from typing import Union, List
+# import re
+#
+# re_spaces = re.compile(r'\s*')
+#
+#
+# def wikify(text: str):
+#     text = text.replace('&#1122;', 'Ѣ').replace('&#1123;', 'ѣ').replace('&amp;#1122;', 'Ѣ').replace('&amp;#1123;', 'ѣ')
+#
+#     text = re.sub(r'^(--|-)\s*(?!\w)', '— ', text)
+#     return text
 
 
 # !/usr/bin/env python3
 from selenium import webdriver
 import requestium
+import chromedriver_binary  # Adds chromedriver binary to path
 from sqlalchemy_utils.functions import database_exists, create_database
 import dataset
 from dataset.types import Types as T
-import threading
-import numpy as np
+import threading, queue
 import json
 from datetime import datetime, timedelta, date
 import time
+from typing import Optional, Union, Tuple, List, NamedTuple
 from urllib.parse import quote_plus
+import pypandoc
+from pydantic import BaseModel, ValidationError, Field, validator, root_validator, Extra, dataclasses
+
+import db
 
 
 class SelenuimSession:
@@ -82,17 +87,32 @@ class Scraper(SelenuimSession):
         return text_new
 
 
+class D(NamedTuple):
+    tid: int
+    text: Optional[str]
+    desc: Optional[str]
+
+
+def wikify(r, scraper):
+    text = scraper.wikify(r['wiki'])
+    desc = scraper.wikify(r['text_desc']) if r['text_desc'] else ''
+    d = D(tid=r['tid'], text=text, desc=desc)
+    return d
+
+
 def wikify_all_into_db():
-    from wikificator import Scraper
+    # from wikificator import Scraper
     scraper = Scraper()
-    for text in db.db_wiki.find(wiki != None):
-        wikitext = scraper.wikify(text)
-        db.htmls.upsert({'tid': tid, 'wikified': text})
-        print(tid)
+    ta = db.all_tables
+    for r in ta.find(ta.table.c.wiki.isnot(None), do_upload=True):
+        print(tid, end=' ')
+        d = wikify(r)
+        # db.htmls.upsert({'tid': tid, 'wikified': text})
+        db.wiki.update({'tid': d.tid, 'wikified': d.text, 'desc': d.desc}, ['tid'])
+        print('updated')
 
 
-if __name__ == '__main__':
-
+def test():
     scraper = Scraper()
     try:
         wikitext = scraper.wikify(text='-- dd  f')
@@ -101,17 +121,100 @@ if __name__ == '__main__':
     finally:
         scraper.s.driver.quit()
 
-    # print(soup)
 
-    # wc = mwp.parse(r.text)
-    # tags = wc.filter_tags()
-    # j = tags[68].contents.nodes.get()
-    # t = []
-    # for n in tags[68].contents.nodes:
-    #     # print(n)
-    #     if isinstance(n, mwp.nodes.Tag):
-    #         for n1 in n:
-    #             print(n1)
-    #             t.append(n1.value)
-    #         continue
-    #     t.append(n.value)
+def main():
+    lock = threading.RLock()
+    q = queue.Queue(maxsize=20)  # fifo_queue
+    db_q = queue.Queue(maxsize=5)
+
+    def db_fill_pool():
+        # ta = db.all_tables
+        tt = db.titles.table
+        th = db.htmls.table
+        tw = db.wiki.table
+        td = db.desc.table
+
+        chunk = 1000  # rows
+        offset = 0
+        while True:
+            stm = f"SELECT {tt.name}.id as tid,wiki,{td.name}.desc as text_desc " \
+                  f'FROM {tt.name} ' \
+                  f'LEFT JOIN {th.name} ON {tt.c.id}={th.c.tid} ' \
+                  f'LEFT JOIN {tw.name} ON {tt.c.id}={tw.c.tid} ' \
+                  f'LEFT JOIN {td.name} ON {tt.c.id}={td.c.tid} ' \
+                  f'WHERE {tt.c.do_upload} IS TRUE AND ' \
+                  f'{th.c.wiki} IS NOT NULL AND {tw.c.text} IS NULL ' \
+                  f'LIMIT {chunk} OFFSET {offset};'
+            # f'LIMIT {q.maxsize} OFFSET {offset};'
+            # f'LIMIT 1000;'
+            resultsproxy = db.db.query(stm)
+            # resultsproxy = t.find(ta.table.c.wiki.is_not(None), ta.table.c.wikified.is_(None), do_upload=1, _limit=q.maxsize, _offset=offset)
+            if not resultsproxy:
+                break
+            for r in resultsproxy:
+                q.put(r)
+            offset += chunk  # q.maxsize
+
+    def worker():
+        try:
+            scraper = Scraper()
+            while True:
+                # print(f'{q.unfinished_tasks=}')
+                while q.empty():
+                    # print(f'q.empty sleep')
+                    time.sleep(0.2)
+                r = q.get()
+                print(r['tid'])
+                d = wikify(r, scraper)
+                if d.text:
+                    while db_q.full():
+                        time.sleep(0.2)
+                    db_q.put(d)
+
+                q.task_done()
+
+        except Exception as e:
+            raise
+        finally:
+            scraper.s.driver.quit()
+
+    def db_save_pool():
+        while True:
+            while db_q.empty():
+                # print(f'db_q.empty sleep')
+                time.sleep(0.2)
+            # print(f'{db_q.unfinished_tasks=}')
+            d = db_q.get()
+            print('updated', d.tid)
+
+            # with lock:
+            db.db.begin()
+            try:
+                db.wiki.upsert({'tid': d.tid, 'text': d.text, 'desc': d.desc}, ['tid'])
+                db.db.commit()
+            except:
+                print(d.tid, 'rollback')
+                db.db.rollback()
+
+            db_q.task_done()
+
+    print('find db for rows to work, initial threads')
+    threading.Thread(target=db_fill_pool, name='db_fill_pool', daemon=True).start()
+    threading.Thread(target=db_save_pool, name='db_save', daemon=True).start()
+    for r in range(q.maxsize):
+        threading.Thread(target=worker, daemon=True).start()
+
+    # t = db.all_tables
+    # cols = t.table.c
+
+    # db_fill_pool()
+
+    # block until all tasks are done
+    q.join()
+    db_q.join()
+    print('All work completed')
+
+
+if __name__ == '__main__':
+    main()
+    # wikify_all_into_db()

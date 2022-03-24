@@ -60,9 +60,7 @@ htmls.create_column('wiki_title', T.text)
 desc = db.create_table('desc_')
 desc.create_column('tid', T.integer, unique=True, nullable=False)
 
-# db_wiki = db.create_table('wiki', primary_id='tid', primary_increment=False)
-# db_wiki.create_column('wiki', T.integer, unique=True, nullable=False)
-# db_wiki.create_column('text', T.text)
+wiki = db.create_table('wikified')
 
 images = db.create_table('images')
 images.create_column('tid', T.integer, nullable=False)

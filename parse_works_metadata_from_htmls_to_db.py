@@ -425,7 +425,7 @@ def main():
             while not db_q.empty():
                 time.sleep(1)
 
-            stm = f"SELECT slug_text,text_url,{ta.c.tid} as tid,`year`,size,title,title_ws,text_desc,oo,uploaded_text,do_upload,slug_author,author_id,`name`,family_parsed,names_parsed,name_WS,live_time,town,litarea,image_url_filename,image_filename_wiki,author_desc,is_author,uploaded_author,html,wiki,desc_tid,author_cat " \
+            stm = f"SELECT slug_text,text_url,{ta.c.tid} as tid,`year`,size,title,title_ws,text_desc_raw,oo,uploaded_text,do_upload,slug_author,author_id,`name`,family_parsed,names_parsed,name_WS,live_time,town,litarea,image_url_filename,image_filename_wiki,author_desc,is_author,uploaded_author,html,wiki,desc_tid,author_cat " \
                   f'FROM {ta.name} LEFT JOIN {tc.name} ON {ta.c.tid}={tc.c.tid} WHERE {tc.c.tid} IS NULL ' \
                   f'AND {ta.c.title} IS NOT NULL AND {ta.c.html} IS NOT NULL ' \
                   f'LIMIT {q.maxsize} OFFSET {offset};'  # f'LIMIT 100;'
@@ -444,7 +444,7 @@ def main():
         # t = db.all_tables
         ta = t.table
 
-        offset = 0
+        # offset = 0
         while True:
 
             # for r in t.find(tid=114740):  # 87482  87492
