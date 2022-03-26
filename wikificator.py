@@ -142,14 +142,14 @@ def main():
                   f'LEFT JOIN {th.name} ON {tt.c.id}={th.c.tid} ' \
                   f'LEFT JOIN {tw.name} ON {tt.c.id}={tw.c.tid} ' \
                   f'LEFT JOIN {td.name} ON {tt.c.id}={td.c.tid} ' \
-                  f'WHERE {tt.c.do_upload} IS TRUE AND ' \
-                  f'{th.c.wiki} IS NOT NULL AND {tw.c.text} IS NULL ' \
+                  f'WHERE {tt.c.do_upload} IS TRUE ' \
+                  f'AND {th.c.wiki} IS NOT NULL AND {tw.c.text} IS NULL ' \
                   f'LIMIT {chunk} OFFSET {offset};'
             # f'LIMIT {q.maxsize} OFFSET {offset};'
             # f'LIMIT 1000;'
             resultsproxy = db.db.query(stm)
             # resultsproxy = t.find(ta.table.c.wiki.is_not(None), ta.table.c.wikified.is_(None), do_upload=1, _limit=q.maxsize, _offset=offset)
-            if not resultsproxy:
+            if resultsproxy.result_proxy.rowcount == 0:
                 break
             for r in resultsproxy:
                 q.put(r)
@@ -199,15 +199,15 @@ def main():
             db_q.task_done()
 
     print('find db for rows to work, initial threads')
-    threading.Thread(target=db_fill_pool, name='db_fill_pool', daemon=True).start()
     threading.Thread(target=db_save_pool, name='db_save', daemon=True).start()
     for r in range(q.maxsize):
         threading.Thread(target=worker, daemon=True).start()
+    # threading.Thread(target=db_fill_pool, name='db_fill_pool', daemon=True).start()
 
     # t = db.all_tables
     # cols = t.table.c
 
-    # db_fill_pool()
+    db_fill_pool()
 
     # block until all tasks are done
     q.join()

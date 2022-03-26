@@ -27,13 +27,14 @@ class CategoriesbyAuthors(BaseModel):
     text_lang_by_author: Optional[str]
 
 class X(D):
+    wikified: str
     oo: bool
     title_ws: str
-    desc: str = Field(..., alias='text_desc_raw')
+    desc: str = Field(..., alias='text_desc_wikified')
     author_tag: Optional[str]
-    lang: str = ''
+    lang: Optional[str] = ''
     year_dead: Optional[int]
-    date_original: str = ''
+    date_published: str = ''
     date_translate: str = ''
     size: Optional[int]
     categories: list = []
@@ -48,40 +49,43 @@ class X(D):
     #         self.wiki_title += '/ДО'
     # return wiki_title
 
-    @validator('desc')
-    def clean_desc(cls, v):
-        v = re.sub(r'^<dd><font[^>]*>(.+?)</font></dd>$', r'\1', v, flags=re.DOTALL)
-        v = re.sub(r'<dd><small><a[^>]+>Иллюстрации/приложения:.+?</a></small></dd>$', '', v, flags=re.DOTALL)
+    def clean_desc(self):
+        if v := self.desc:
+            v = re.sub(r'^<dd><font[^>]*>(.+?)</font></dd>$', r'\1', v, flags=re.DOTALL)
+            v = re.sub(r'<dd><small><a[^>]+>Иллюстрации/приложения:.+?</a></small></dd>$', '', v, flags=re.DOTALL)
 
-        # desc = '<dd><font color="#555555"><i>Перевод <a href="http://az.lib.ru/b/blinowa_e_m/">Елизаветы Блиновой</a> и <a href="http://az.lib.ru/k/kuzmin_m_a/">Михаила Кузмина</a> (1913).</i></font></dd><dd><small><a href="/img/g/gurmon_r_d/text_02_emil_verharn/index.shtml">Иллюстрации/приложения: 1 шт.</a></small></dd>'
-        for a in re.findall(r'(<a[^>]*?href="[^"]+".*?>.*?</a>)', v):
-            m = re.search(r'<a[^>]*?href="([^"]+)".*?>(.*?)</a>', a)
-            href_slug = urlsplit(m.group(1)).path.rstrip('/')
-            db_a = db.authors.find_one(slug=href_slug)
-            if db_a:
-                a_new = f'[[{db_a.name_ws}|{m.group(2)}]]'
-            else:
-                a_new = m.group(2)
-            v = v.replace(a, a_new)
-
-        return v
+            # href → викиссылки авторов
+            # desc = '<dd><font color="#555555"><i>Перевод <a href="http://az.lib.ru/b/blinowa_e_m/">Елизаветы Блиновой</a> и <a href="http://az.lib.ru/k/kuzmin_m_a/">Михаила Кузмина</a> (1913).</i></font></dd><dd><small><a href="/img/g/gurmon_r_d/text_02_emil_verharn/index.shtml">Иллюстрации/приложения: 1 шт.</a></small></dd>'
+            for a in re.findall(r'(<a[^>]*?href="[^"]+".*?>.*?</a>)', v):
+                m = re.search(r'<a[^>]*?href="([^"]+)".*?>(.*?)</a>', a)
+                href_slug = urlsplit(m.group(1)).path.rstrip('/')
+                db_a = db.authors.find_one(slug=href_slug)
+                if db_a:
+                    a_new = f'[[{db_a.name_ws}|{m.group(2)}]]'
+                else:
+                    a_new = m.group(2)
+                v = v.replace(a, a_new)
+        self.desc = v
 
     # def make_wikititle(self):
     #     if self.oo and self.title_ws:
     #         self.title_ws += '/ДО'
 
-    @root_validator
+    @root_validator(pre=True)
     def change_values(cls, values: dict):
-        date = values.get('date')
-        lang = values.get('lang')
-        if date:
-            if lang:
-                values['date_original'] = date
-            else:
-                values['date_translate'] = date
+        year = values.get('year')
+        lang_translated = values.get('lang')
+        if lang_translated:
+            values['date_original'] = year
+        else:
+            values['date_published'] = year
 
-            if values['oo'] and values['title_ws']:
-                values['title_ws'] += '/ДО'
+        if values['oo'] and values['title_ws']:
+            values['title_ws'] += '/ДО'
+
+        # text replaces
+        text = values.get('wikified', '')
+        values['wikified'] = text.replace('<sup></sup>', '').replace('<sub></sub>', '')
 
         return values
 
@@ -90,12 +94,13 @@ class X(D):
         re_refs_check = re.compile(r'(<sup>|\[\d|\{.+?\})', flags=re.I)
 
         conditions = [
-            (re_headers_check.search(self.wiki), 'Страницы с не вики-заголовками'),
-            (re_refs_check.search(self.wiki), 'Страницы с не вики-сносками или с тегом sup'),
-            ('[#' in self.wiki, 'Страницы с внутренними ссылками по анкорам'),
-            ('pre' in self.wiki, 'Страницы с тегами pre'),
-            ('<ref' in self.wiki, 'Страницы со сносками'),
-            ('http' in self.wiki, 'Страницы с внешними ссылками'),
+            (re_headers_check.search(self.wikified), 'Страницы с не вики-заголовками'),
+            (re_refs_check.search(self.wikified), 'Страницы с не вики-сносками или с тегом sup'),
+            ('[#' in self.wikified, 'Страницы с внутренними ссылками по анкорам'),
+            ('pre' in self.wikified, 'Страницы с тегами pre'),
+            ('<ref' in self.wikified, 'Страницы со сносками'),
+            ('http' in self.wikified, 'Страницы с внешними ссылками'),
+            ('ru.wikisource.org/wiki' in self.wikified, 'Страницы с внешними ссылками на Викитеку'),
             # ([e for pre in soup.find_all('pre') for e in pre.find_all('ref')], 'Теги ref внутри pre'),
         ]
 
@@ -149,18 +154,18 @@ class X(D):
         cats.append(f'{self.name_WS}')
         cats.append(f'Литература {self.year} года')
 
-        self.categories = [f'[[Категория:{c}]]' for c in cats]
-        self.categories_string = '\n'.join(self.categories)
+        self.categories = cats
+        self.categories_string = '\n'.join([f'[[Категория:{c}]]' for c in cats])
 
 
-def make_wikipage(d):
+def make_wikipage(d) -> str:
     # imported/lib.ru - Данный текст импортирован с сайта lib.ru. Он может содержать ошибки распознавания и оформления.
     # После исправления ошибок просьба убрать данный шаблон-предупреждение.
 
     wiki_text = \
         f"""{{{{imported/lib.ru}}}}
 {{{{Отексте
-| АВТОР                 = {d.author}
+| АВТОР                 = {d.name_WS}
 | НАЗВАНИЕ              = {d.title}
 | ПОДЗАГОЛОВОК          = 
 | ЧАСТЬ                 = 
@@ -168,29 +173,29 @@ def make_wikipage(d):
 | ИЗЦИКЛА               = 
 | ИЗСБОРНИКА            = 
 | ДАТАСОЗДАНИЯ          = 
-| ДАТАПУБЛИКАЦИИ        = {d.date_translate if d.lang else d.date_original}
-| ЯЗЫКОРИГИНАЛА         = {d.lang}
+| ДАТАПУБЛИКАЦИИ        = {d.date_translate if d.lang else d.date_published}
+| ЯЗЫКОРИГИНАЛА         = {d.lang if d.lang else ''}
 | НАЗВАНИЕОРИГИНАЛА     = 
 | ПОДЗАГОЛОВОКОРИГИНАЛА = 
-| ПЕРЕВОДЧИК            = {d.translator}
-| ДАТАПУБЛИКАЦИИОРИГИНАЛА = {d.date_original if d.lang else ''}
-| ИСТОЧНИК              = [{d.source} lib.ru]
+| ПЕРЕВОДЧИК            = {d.translator if d.translator else ''}
+| ДАТАПУБЛИКАЦИИОРИГИНАЛА = {d.date_published if d.lang else ''}
+| ИСТОЧНИК              = [{d.text_url} lib.ru]
 | ВИКИДАННЫЕ            = <!-- id элемента темы -->
 | ВИКИПЕДИЯ             = 
 | ВИКИЦИТАТНИК          = 
 | ВИКИНОВОСТИ           = 
 | ВИКИСКЛАД             = 
-| ДРУГОЕ                = {d.other}
+| ДРУГОЕ                = {d.desc}
 | ПРЕДЫДУЩИЙ            = 
 | СЛЕДУЮЩИЙ             = 
-| КАЧЕСТВО              = 2 <!-- оценка по 4-х бальной шкале -->
+| КАЧЕСТВО              = 1 <!-- оценка по 4-х бальной шкале -->
 | НЕОДНОЗНАЧНОСТЬ       = 
 | ДРУГИЕПЕРЕВОДЫ        = 
-| ЛИЦЕНЗИЯ              = {{{{PD-old}}}}
+| ЛИЦЕНЗИЯ              = PD-old
 | СТИЛЬ                 = text
 }}}}
 <div class="text">
-{d.text}
+{d.wikified}
 </div>
 
 {d.categories_string}
@@ -207,10 +212,11 @@ class CommonData:
 def make_wikipages_to_db():
     ta = db.all_tables
     col = ta.table.c
-    g = [r for r in ta.find(col.wiki.isnot(None), col.do_upload.is_true(), col.title_ws.isnot(None), col.year <= 2022-71,
-                            _limit=10)]
-    for r in g:
+    res = ta.find(col.wikified.isnot(None), col.title_ws.isnot(None), col.year <= 2022 - 4 - 71, do_upload=True, _limit=10)
+    # res = list(res)
+    for r in res:
         d = X.parse_obj(r)
+        d.clean_desc()
         # d.make_wikititle()
         # d.wiki_title = make_wikititle(r)
         d.categorization(CommonData)
@@ -221,4 +227,4 @@ def make_wikipages_to_db():
 
 
 if __name__ == '__main__':
-    make_wikipages_to_db()
+    wiki_text = make_wikipages_to_db()
