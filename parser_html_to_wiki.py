@@ -742,7 +742,7 @@ def find_and_combine_tags(soup, init_tag_name: str, init_tag_attrs: dict = None)
     # Some symbols between same tags can add into them. Because they don't changing of font style.
     if init_tag_name == 'i':
         # Italic doesn't change the style of some characters (spaces, period, comma), so they can be combined
-        re_symbols_ignore = re.compile(r'^\s*|[.,-]$')
+        re_symbols_ignore = re.compile(r'^(\s*|[.,-])$')
     elif init_tag_name == 'b':
         # Bold changes the style of all characters
         re_symbols_ignore = re.compile(r'^\s*$')
