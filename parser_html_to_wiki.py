@@ -59,14 +59,13 @@ class HtmltoWikiBase:
         dev_to_center(soup)
 
     def inline_tags(self, soup):
-
         # *** inline-теги
         unwrap_empty_inline_tags(soup)  # пустые inline-теги ['i', 'b', 'em', 'strong']
 
         for tag_name in ['b', 'strong', 'i', 'em', 'emphasis', 'sup', 'sub']:  # 'span'
-            soup=find_and_combine_tags(soup, tag_name)
+            soup = find_and_combine_tags(soup, tag_name)
 
-            # Main markup
+        # Main markup
         replace_tag_with_wikimarkup(soup, 'i', "''")
         replace_tag_with_wikimarkup(soup, 'em', "''")
         replace_tag_with_wikimarkup(soup, 'b', "'''")
@@ -167,14 +166,14 @@ def replace_tag_by_class_attr_exactly(soup, tag: str, class_names: list, tag_rep
         ->
         <center>text</center><div class="bold center">text</div>
     """
-    elements = self.find_tag_with_attr_value_exactly(soup, tag, attr="class", attr_values=class_names)
+    elements = find_tag_with_attr_value_exactly(soup, tag, attr="class", attr_values=class_names)
     for e in elements:
         e.name = tag_repl
         e.attrs["class"].remove(class_names)
 
 
 # def remove_tag_attr_value_exactly( soup, tag: str, attr: str, value: list):
-#     elements = self.find_tag_with_attr_value_exactly(soup, tag, attr=attr, attr_value=value)
+#     elements = find_tag_with_attr_value_exactly(soup, tag, attr=attr, attr_value=value)
 #     for e in elements:
 #         e.name = tag_repl
 #         e.attrs[tag].remove(value)
@@ -192,7 +191,7 @@ def replace_tag_by_attr_value_exactly(soup, tag: str, attr: str, attr_values: li
         ->
         <center>text</center><div class="bold center">text</div>
     """
-    elements = self.find_tag_with_attr_value_exactly(soup, tag, attr=attr, attr_values=attr_values)
+    elements = find_tag_with_attr_value_exactly(soup, tag, attr=attr, attr_values=attr_values)
     for e in elements:
         e.name = tag_repl
         e.attrs[tag].remove(attr_values)
@@ -417,11 +416,13 @@ def strip_tags(soup):
             if not is_excluded_subtag(tag):
                 strip_tag(tag)
 
+
 def strip_wikitext(text):
     text = re_begin_spaces_with_newlines_br.sub('', text)
     text = re_end_spaces_with_newlines_br.sub('', text)
     text = re_multi_newlines.sub('\n\n', text)
     return text
+
 
 def tag_p_to_newline(soup):
     for e in soup.find_all('p'):
@@ -704,7 +705,7 @@ def find_and_combine_tags(soup, init_tag_name: str, init_tag_attrs: dict = None)
                 next_siblings.append(t)
             # elif is_string(t) and re_symbols_ignore and not re_symbols_ignore.match(t):
             #     next_siblings.append(t)
-            elif t.name in ignoring_tags_names and t.attrs == init_tag_attrs:  # also checking the tag attrs
+            elif t.name in ignoring_tags_names and t.attrs == init_tag_attrs:
                 next_siblings.append(t)
             else:
                 # filling `next_siblings` until another tag met
