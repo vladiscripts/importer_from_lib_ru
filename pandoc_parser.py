@@ -13,7 +13,7 @@ import mwparserfromhell as mwp
 import pypandoc
 from bs4 import BeautifulSoup, Tag
 
-import db
+import db_schema as db
 from get_parsed_html import get_html, get_content_from_html, get_content_from_html_soup
 from html2wiki import LibRu
 from parser_html_to_wiki import *
@@ -30,7 +30,8 @@ class H(BaseModel):
     tid: int
     html: str
     soup: Optional[BeautifulSoup]
-    wiki: Optional[str]
+    wikicode: mwp.wikicode.Wikicode = None
+    wiki: Optional[str] = Field(..., alias='wiki2')
     images: List[Image] = []
 
     class Config:
@@ -111,28 +112,9 @@ def tags_a_refs(soup):
     return soup
 
 
-def convert_page(h: H):
+def convert_page(h:H):
     parser = LibRu()
 
-    # match source:
-    #     case BeautifulSoup() | Tag():
-    #         soup = source
-    #     case str():
-    #         # parser.content = get_content_from_html_soup(d.soup)
-    #         input_html = get_content_from_html(source)
-    #         parser.soup = BeautifulSoup(input_html, 'html5lib')
-    #     case _:
-    #         raise Exception('source :BeautifulSoup | Tag | str')
-
-    # source = h.html
-    # if isinstance(source, (BeautifulSoup, Tag)):
-    #     soup = source
-    # elif isinstance(source, str):
-    #     # parser.content = get_content_from_html_soup(d.soup)
-    #     input_html = get_content_from_html(source)
-    #     parser.soup = BeautifulSoup(input_html, 'html5lib')
-    # else:
-    #     raise Exception('source :BeautifulSoup | Tag | str')
     input_html = get_content_from_html(h.html)
     parser.soup = BeautifulSoup(input_html, 'html5lib')
 
@@ -160,6 +142,12 @@ def convert_page(h: H):
         t.name = 'p'
 
     html = parser.soup.decode()
+    # html1 = re.sub(r'(<(?:p|dd)(?:| [^>]+?)>)\s+', r'\1', html)  # убрать пробелы после <p>, <dd>
+    # html2 = re.sub(r'<(p|dd)(?:| [^>]+?))>\s+(?!</\1>)', r'<\1>\2', html)  # убрать пробелы после <p>, <dd>
+    # html3 = re.sub(r'<(p|dd)( [^>]+)?>(</\1>)', r'<\1\2> \3',
+    #        re.sub(r'<(p|dd)( [^>]+)?>[^\S\r\n]+', r'<\1\2>', html, flags=re.DOTALL))  # убрать пробелы после <p>, <dd>
+    html = re.sub(r'<(p|dd)( [^>]+)?>[^\S\r\n]+', r'<\1\2>', html, flags=re.DOTALL)  # убрать пробелы после <p>, <dd>
+
     text = pypandoc.convert_text(html, 'mediawiki', format='html', verify_format=False)
     text = html_.unescape(text.strip('/'))
 
@@ -178,8 +166,8 @@ def convert_page(h: H):
 
     text = re.sub(r'<div align="center">(.+?)</div>', r'<center>\1</center>', text, flags=re.DOTALL)
     text = re.sub(r'^(?:<center>\s*)?(\* \* \*|\*\*\*)(?:\s*</center>)?$', '{{***}}', text, flags=re.MULTILINE)
-    text = re.sub(r'^<center>\s*-{5}\s*</center>$', '{{bar}}', text, flags=re.MULTILINE)
-    text = re.sub(r'^<center>\s*-{6,}\s*</center>$', '{{---}}', text, flags=re.MULTILINE)
+    text = re.sub(r'^<center>\s*-{5}\s*</center>$', '{{---|width=6em}}', text, flags=re.MULTILINE)
+    text = re.sub(r'^<center>\s*-{6,}\s*</center>$', '{{---|width=10em}}', text, flags=re.MULTILINE)
     text = re.sub(r'<center>\s*(\[\[File:[^]]+?)\]\]\s*</center>', r'\1|center]]', text)
 
     text = re.sub(r'([Α-Ω]+)', r'{{lang|grc|\1}}', text, flags=re.I)
@@ -195,6 +183,14 @@ def convert_page(h: H):
     for span in spans: wc.remove(span)
     # for span in spans: wc.remove(span)
     # out2 = re.sub('<span class="footnote"></span>', '', out2)
+
+    # <span "class=underline"> → '<u>'. Такие теги делает pandoc.
+    for t in wc.filter_tags():
+        if t.tag == 'span':
+            for a in t.attributes:
+                if a.name == 'class' and a.value == 'underline':
+                    t.tag = 'u'
+                    t.attributes.remove(a)
 
     # strip параметр в {{right|}}
     for t in wc.filter_templates(matches=lambda x: x.name == 'right'):
@@ -214,18 +210,16 @@ def convert_page(h: H):
 
     # mwp.parse('{{right|}}').nodes[0]
 
-    wc, h = process_images(wc, h)
-
+    h.wikicode = wc
     text = str(wc)
-
-    # strip text
     h.wiki = strip_wikitext(text)
 
     return h
 
 
-def process_images(wc: mwp.wikicode.Wikicode, h):
+def process_images(h):
     """ to simple names of images """
+    wc = h.wikicode
     for f in wc.filter_wikilinks(matches=lambda x: x.title.lower().startswith('file')):
         link = re.sub('^[Ff]ile:', '', str(f.title))
         p = Path(link)
@@ -239,7 +233,7 @@ def process_images(wc: mwp.wikicode.Wikicode, h):
         f.title = 'File:' + name_ws
         img = Image(tid=h.tid, urn=link, filename=p.name, name_ws=name_ws)
         h.images.append(img)
-    return wc, h
+    return h
 
 
 count_pages_per_min = 0
@@ -254,43 +248,28 @@ def convert_pages_to_db_with_pandoc_on_several_threads():
     def db_save_pool():
         while True:
             while db_q.empty():
-                # print(f'db_q.empty')
                 time.sleep(1)
             h = db_q.get()
 
-            # if last_time < datetime.now():
-            #     if last_time.minute < datetime.now().minute:
-            #         print(count_pages_per_min)
-            #         count_pages_per_min = 0
-            #         last_time = datetime.now()
-            #     else:
-            #         count_pages_per_min += 1
-
             rows = [img.dict() for img in h.images]
-            with lock:
-                # try:
-                #     db.images.insert_many(rows)
-                # except sqlalchemy.exc.IntegrityError as e:
+            with db.db as tx1:
+                tx1['images'].delete(tid=h.tid)
                 for row in rows:
-                    db.images.insert_ignore(row, ['tid', 'name_ws'])
-                db.htmls.upsert({'tid': h.tid, 'wiki': h.wiki}, ['tid'])
+                    tx1['images'].insert_ignore(row, ['tid', 'name_ws'])
+                tx1['htmls'].update({'tid': h.tid, 'wiki2': h.wiki}, ['tid'])
 
             db_q.task_done()
 
     def worker():
         while True:
             while q.empty():
-                # print(f'q.empty')
                 time.sleep(1)
             h = q.get()
-            # print(h.tid)
-            # print(f'Finished {item}')
-            # content_html = get_content_from_html(h.html)
             h = convert_page(h)
+            h = process_images(h)
             h.html = None
+            h.wikicode = None
             if h.wiki:
-                # with lock:
-                #     db.db_htmls.upsert({'tid': tid, 'wiki': text}, ['tid'])
                 print('converted, to db', h.tid)
                 db_q.put(h)
             else:
@@ -301,60 +280,31 @@ def convert_pages_to_db_with_pandoc_on_several_threads():
     for r in range(q.maxsize):
         threading.Thread(target=worker, daemon=True).start()
 
-    # for tid in [5643]:
-    # for r in db.db_htmls.find(db.db_htmls.table.c.wiki.isnot(None)):
-    # for r in db.htmls.find(wiki=None):
-    # for r in db.db_htmls.find():
-    t = db.all_tables
+    # t = db.all_tables
+    t = db.htmls
     cols = t.table.c
-    # tids_got = set()
-    # for r in t.find(cols.title.is_not(None), cols.html.is_not(None), cols.wiki.is_(None)):
-
-    # for r in t.find(cols.wiki.is_(None), cols.html.is_not(None)):
-    #     if last_time < datetime.now():
-    #         if last_time.minute < datetime.now().minute:
-    #             print(count_pages_per_min)
-    #             count_pages_per_min = 0
-    #             last_time = datetime.now()
-    #         else:
-    #             count_pages_per_min += 1
-    #
-    #     q.put(H.parse_obj(r))
-    #
-    #     while q.unfinished_tasks > 0:
-    #         # print('not q.empty()')
-    #         time.sleep(3)
-    #
-    # # block until all tasks are done
-    # q.join()
-    # db_q.join()
-    # print('All work completed')
 
     offset = 0
     while True:
-        pool = [H.parse_obj(r) for r in
-                t.find(cols.wiki.is_(None), cols.html.is_not(None), _limit=q.maxsize, _offset=offset)
-                # t.find(tid=87568, _limit=q.maxsize, _offset=offset)
-                # t.find(wiki={'like':'%[[File:%'}, _limit=q.maxsize, _offset=offset)
-                ]
-        if not pool:
+        res = t.find(
+            cols.html.is_not(None),
+            # cols.wiki.is_(None),
+            # cols.wiki2.is_(None),
+            tid=144927,  # wiki={'like':'%[[File:%'},
+            _limit=q.maxsize, _offset=offset)
+        if res.result_proxy.rowcount == 0:
             if offset == 0:
                 break
             else:
                 offset = 0
         offset += q.maxsize
-        for h in pool:
-            # if h.tid in tids_got:
-            #     continue
-            # tids_got.add(h.tid)
-
+        for r in res:
+            h = H.parse_obj(r)
             q.put(h)
 
-        while q.unfinished_tasks > 0:
-            # print('not q.empty()')
-            time.sleep(3)
+        # while q.unfinished_tasks > 0:
+        #     time.sleep(3)
 
-    # block until all tasks are done
     q.join()
     db_q.join()
     print('All work completed')

@@ -16,7 +16,6 @@ import re
 from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 import html as html_
 
-import db
 from pandoc_parser import convert_page
 from get_parsed_html import get_content_from_html, get_content_from_html_soup, re_spaces_many_no_newlines
 from pandoc_parser import Image

@@ -1,78 +1,96 @@
 #!/usr/bin/env python3
-import time
 import re
-import threading, queue
-# import pypandoc
+import time
+from pathlib import Path
+import uuid
 from typing import Optional, Union, Sequence, List, Tuple
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError, Field, validator, root_validator, Extra
 from pydantic.dataclasses import dataclass
-import html as html_
-import mwparserfromhell as mwp
 import pywikibot as pwb
 
-site = pywikibot.Site('ru', 'wikipedia')
-page = pywikibot.Page(site, 'Page name')
-textPage = page.get()
+import db_schema as db
+import make_work_wikipages
 
 
-import db
-from get_parsed_html import get_html
-from html2wiki import LibRu
-from parser_html_to_wiki import *
+class D(BaseModel):
+    class Config:
+        # validate_assignment = True
+        extra = Extra.allow
+        # arbitrary_types_allowed = True
 
 
-@dataclass
-class D:
-    """
-    from collections import namedtuple
-    d = namedtuple('D', 'author title date translator source other text categories')
-        """
-    author: str = ''
-    title: str = ''
-    date: str = ''
-    translator: str = ''
-    source: str = ''
-    other: str = ''
-    text: str = ''
-    categories: str = ''
-    categories_string: str = ''
-    wiki_title: str = ''
-
-    # def __post_init__(self):
-    #     self.name: str = self.to_upper(self.name)
+SITE = pwb.Site('ru', 'wikisource', user='TextworkerBot')
+summary = '[[Викитека:Проект:Импорт текстов/Lib.ru]]'
+year_limited = 2022 - 70 - 1
 
 
-def make_wikititle(r):
-    title = f"{r['title']} ({r['family_parsed_for_WS']})"
-    if r['oo']:
-        d.wiki_title += '/ДО'
-    return title
+def posting_page(d: D):
+    def wiki_posting_page(page: D, text_new: str, summary: str):
+        if page.text != text_new:
+            page.text = text_new
+            page.save(summary=summary)
 
-def posting():
-    t = db.all_tables
-    cols = t.table.c
-    for r in db.all_tables.find(cols.wiki.isnot(None)):
+    tid = d.tid
+    title = d.title_ws
 
-        # d = D(author=r['name'],
-        #       title=r['title'],
-        #       date=r['year'],
-        #       # translator=translator,
-        #       source=r['text_url'],
-        #       other=r['title_desc'],
-        #       text=r['wiki'],
-        #       # text=r['wikified'],
-        #       )
+    if len(title.encode()) >= 255:
+        print(f'length > 255 bytes, {title=}')
+        return
+    elif re.search(r'[\[\]]', title):
+        print(f'illegal char(s) in {title=}')
+        return
+    page = pwb.Page(SITE, title)
+    if page.exists():
+        print(f'page exists {tid=}, {title=}')
+        db.titles.update({'id': tid, 'is_same_title_in_ws_already': True}, ['id'])
+        # page.title += '/Дубль'
+        # page.text = r['wiki_page'] + '\n[[Категория:Импорт/lib.ru/Дубли имён существующих страниц]]'
+        # if page.isRedirectPage():
+        #     pass
+    else:
+        try:
+            page.text = d.wikipage_text
+            page.save(summary=summary)
 
-        page = pwb.Page(title=r['wiki_title'])
-        if page.exists():
-            page.title +='/Дубль'
-            page.text = r['wiki_page'] + '\n[[Категория:Импорт/lib.ru/Дубли имён существующих страниц]]'
+        except pwb.exceptions.OtherPageSaveError as e:
+            print(e)
+            Path(f'error_wikipages_texts', uuid.uuid4().hex + '.wiki').write_text(f'{title}\n{d.wikipage_text}')
+
+        except Exception as e:
+            print(e)
+            Path(f'error_wikipages_texts', uuid.uuid4().hex + '.wiki').write_text(f'{title}\n{d.wikipage_text}')
+
         else:
-            page.text = r['wiki_page']
+            db.titles.update({'id': tid, 'uploaded': True}, ['id'])
+            print(f'{tid=}, {d.year_dead=}')
+            return True
 
-        d.categories_string = categorization(d.text, r)
-        d.wiki_title = make_wikititle(r)
-        wikipage = make_wikipage(d)
-        # db.db_htmls.upsert({'tid': r['tid'], 'wikified': d.text}, ['tid'])
-        db.db_wiki.upsert({'tid': r['tid'], 'wiki_page': wikipage, 'wiki_title': d.wiki_title}, ['tid'], ensure=True)
-        print()
+
+def make_wikipages_to_db():
+    ta = db.all_tables
+    cola = ta.table.c
+
+    offset = 0
+    limit = 100
+    while True:
+        res = ta.find(
+            cola.wikified.isnot(None), cola.title_ws.isnot(None), 
+#            cola.text_len < 2048, 
+            cola.year_dead <= year_limited,
+            # cola.wikified.not_like('%feb-web.ru%'),
+            # col.lang.isnot(None),
+            uploaded_text=False, do_upload=True,
+            # is_same_title_in_ws_already=False,
+            _offset=offset, _limit=limit)
+        if res.result_proxy.rowcount == 0:
+            print(f'did not found rows in DB')
+            break
+        for r in res:
+            d = make_work_wikipages.X.parse_obj(r)
+            d.make_wikipage()
+            posting_page(d)
+        offset += limit
+
+
+wiki_text = make_wikipages_to_db()
+# db.titles.update({'id': 91593, 'uploaded': True}, ['id'])

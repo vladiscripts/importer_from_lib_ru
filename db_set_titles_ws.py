@@ -2,7 +2,7 @@
 import sqlalchemy.exc
 from sqlalchemy.sql import or_
 from dataclasses import dataclass, InitVar, asdict
-import db
+import db_schema as db
 
 
 @dataclass

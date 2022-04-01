@@ -2,14 +2,15 @@
 from dataclasses import dataclass
 import time
 import re
+from urllib.parse import urlsplit
 import threading, queue
 from typing import Optional, Union, Tuple, List, NamedTuple
 import pypandoc
-from pydantic import BaseModel, ValidationError, Field, validator, root_validator, Extra,dataclasses
+from pydantic import BaseModel, ValidationError, Field, validator, root_validator, Extra, dataclasses
 import html as html_
 import mwparserfromhell as mwp
 
-import db
+import db_schema as db
 from get_parsed_html import get_html
 from html2wiki import LibRu
 from parser_html_to_wiki import *
@@ -19,6 +20,7 @@ categories_cached: list = None
 categories_authors_cached: list = None
 cid_translation: int = None
 
+
 class CategoriesbyAuthors(BaseModel):
     id: int
     name_site: str
@@ -26,28 +28,40 @@ class CategoriesbyAuthors(BaseModel):
     text_cat_by_author: Optional[str]
     text_lang_by_author: Optional[str]
 
+
 class X(D):
     wikified: str
     oo: bool
     title_ws: str
-    desc: str = Field(..., alias='text_desc_wikified')
     author_tag: Optional[str]
-    lang: Optional[str] = ''
+    lang: Optional[str]
     year_dead: Optional[int]
-    date_published: str = ''
+    date_original: str = ''
     date_translate: str = ''
     size: Optional[int]
+    desc: Optional[str] = Field(..., alias='text_desc_wikified')
     categories: list = []
+    wikipage_text: str = ''
 
     class Config:
         extra = Extra.allow
 
-    # @validator('oo', check_fields=False)
-    # @validator('oo')
-    # def make_wikititle(cls, v):
-    #     if v:
-    #         self.wiki_title += '/ДО'
-    # return wiki_title
+    def make_wikipage(self):
+        self.clean_desc()
+        self.set_dates_published()
+        self.text_replaces()
+        self.make_wikititle()
+        self.categorization(CommonData)
+        self.fill_wikipage_template()
+
+    def set_dates_published(self):
+        if self.lang:
+            self.date_original = self.year
+        else:
+            self.date_published = self.year
+
+    def text_replaces(self):
+        self.wikified = self.wikified.replace('<sup></sup>', '').replace('<sub></sub>', '')
 
     def clean_desc(self):
         if v := self.desc:
@@ -61,33 +75,15 @@ class X(D):
                 href_slug = urlsplit(m.group(1)).path.rstrip('/')
                 db_a = db.authors.find_one(slug=href_slug)
                 if db_a:
-                    a_new = f'[[{db_a.name_ws}|{m.group(2)}]]'
+                    a_new = f"[[{db_a['name_WS']}|{m.group(2)}]]"
                 else:
                     a_new = m.group(2)
                 v = v.replace(a, a_new)
         self.desc = v
 
-    # def make_wikititle(self):
-    #     if self.oo and self.title_ws:
-    #         self.title_ws += '/ДО'
-
-    @root_validator(pre=True)
-    def change_values(cls, values: dict):
-        year = values.get('year')
-        lang_translated = values.get('lang')
-        if lang_translated:
-            values['date_original'] = year
-        else:
-            values['date_published'] = year
-
-        if values['oo'] and values['title_ws']:
-            values['title_ws'] += '/ДО'
-
-        # text replaces
-        text = values.get('wikified', '')
-        values['wikified'] = text.replace('<sup></sup>', '').replace('<sub></sub>', '')
-
-        return values
+    def make_wikititle(self):
+        if self.oo and self.title_ws:
+            self.title_ws += '/ДО'
 
     def categorization(self, C):
         re_headers_check = re.compile(r'<center>(Глава.+?|II.?|\d+.?)</center>', flags=re.I)
@@ -107,17 +103,19 @@ class X(D):
         if self.desc:
             conditions += [
                 ('перевод' in self.desc.lower(), 'Указан переводчик в параметре ДРУГОЕ'),
-                ('<i>' in self.desc, 'Таг i в параметре ДРУГОЕ'),
-                ('<b>' in self.desc, 'Таг b в параметре ДРУГОЕ'),
-                ('<br' in self.desc, 'Таг br в параметре ДРУГОЕ'),
+                (self.translator and 'перевод' in self.translator.lower(),
+                 'Слово "перевод" в параметре имени переводчика'),
+                ('<i>' in self.desc, 'Тег i в параметре ДРУГОЕ'),
+                ('<b>' in self.desc, 'Тег b в параметре ДРУГОЕ'),
+                ('<br' in self.desc, 'Тег br в параметре ДРУГОЕ'),
                 # ('<br' in self.desc, 'Указан переводчик и нет категории перевода')
-                (len(self.desc) > 100, 'Длина текста в параметре ДРУГОЕ > 100'),
-                (len(self.desc) > 200, 'Длина текста в параметре ДРУГОЕ > 200'),
-                (len(self.desc) > 300, 'Длина текста в параметре ДРУГОЕ > 300'),
-                (len(self.desc) > 400, 'Длина текста в параметре ДРУГОЕ > 400'),
-                ('<a ' in self.desc, 'Таг a в параметре ДРУГОЕ'),
-                (self.size and self.size > 500, 'Длина текста > 500'),
-                (self.size and self.size > 1000, 'Длина текста > 1000'),
+                (len(self.desc) > 100, 'Длина текста в параметре ДРУГОЕ более 100'),
+                (len(self.desc) > 200, 'Длина текста в параметре ДРУГОЕ более 200'),
+                (len(self.desc) > 300, 'Длина текста в параметре ДРУГОЕ более 300'),
+                (len(self.desc) > 400, 'Длина текста в параметре ДРУГОЕ более 400'),
+                ('<a ' in self.desc, 'Тег a в параметре ДРУГОЕ'),
+                (self.size and self.size > 500, 'Длина текста более 500 Кб'),
+                (self.size and self.size > 1000, 'Длина текста более 1000 Кб'),
                 (self.is_same_title_in_ws_already, 'Есть одноимённая страница, проверить на дубль'),
             ]
 
@@ -138,7 +136,7 @@ class X(D):
             cats.append('Есть одноимённая страница не имевшаяся ранее, проверить на дубль и переименовать')
 
         cats = [f'Импорт/lib.ru/{c}' for c in cats]
-        cats.append('Импорт/lib.ru')
+        # cats.append('Импорт/lib.ru')
 
         cats_from_db = [c.name_ws for r in db.texts_categories.find(tid=self.tid) for c in C.categories_cached
                         if c.cid == r['category_id']]
@@ -146,46 +144,46 @@ class X(D):
 
         for c in C.categories_authors_cached:
             if c.name_ws == self.litarea:
-                if c.lang:
-                    c.lang = self.lang
+                if c.text_lang_by_author:
+                    c.text_lang_by_author = self.lang
                 if c.text_cat_by_author:
                     cats.append(c.text_cat_by_author)
 
         cats.append(f'{self.name_WS}')
         cats.append(f'Литература {self.year} года')
 
+        if self.oo:
+            cats.append(f'Дореформенная орфография')
+
         self.categories = cats
         self.categories_string = '\n'.join([f'[[Категория:{c}]]' for c in cats])
 
-
-def make_wikipage(d) -> str:
-    # imported/lib.ru - Данный текст импортирован с сайта lib.ru. Он может содержать ошибки распознавания и оформления.
-    # После исправления ошибок просьба убрать данный шаблон-предупреждение.
-
-    wiki_text = \
-        f"""{{{{imported/lib.ru}}}}
+    def fill_wikipage_template(self) -> str:
+        self.wikipage_text = f"""\
+{{{{imported/lib.ru}}}}
 {{{{Отексте
-| АВТОР                 = {d.name_WS}
-| НАЗВАНИЕ              = {d.title}
+| АВТОР                 = {self.name_WS}
+| НАЗВАНИЕ              = {self.title}
 | ПОДЗАГОЛОВОК          = 
 | ЧАСТЬ                 = 
 | СОДЕРЖАНИЕ            = 
 | ИЗЦИКЛА               = 
 | ИЗСБОРНИКА            = 
 | ДАТАСОЗДАНИЯ          = 
-| ДАТАПУБЛИКАЦИИ        = {d.date_translate if d.lang else d.date_published}
-| ЯЗЫКОРИГИНАЛА         = {d.lang if d.lang else ''}
+| ДАТАПУБЛИКАЦИИ        = {self.date_translate if self.lang else self.date_published}
+| ЯЗЫКОРИГИНАЛА         = {self.lang or ''}
 | НАЗВАНИЕОРИГИНАЛА     = 
 | ПОДЗАГОЛОВОКОРИГИНАЛА = 
-| ПЕРЕВОДЧИК            = {d.translator if d.translator else ''}
-| ДАТАПУБЛИКАЦИИОРИГИНАЛА = {d.date_published if d.lang else ''}
-| ИСТОЧНИК              = [{d.text_url} lib.ru]
+| ПЕРЕВОДЧИК            = {self.translator or ''}
+| ДАТАПУБЛИКАЦИИОРИГИНАЛА = {self.date_original if self.lang else ''}
+| ИСТОЧНИК              = [{self.text_url} az.lib.ru]
 | ВИКИДАННЫЕ            = <!-- id элемента темы -->
 | ВИКИПЕДИЯ             = 
 | ВИКИЦИТАТНИК          = 
 | ВИКИНОВОСТИ           = 
 | ВИКИСКЛАД             = 
-| ДРУГОЕ                = {d.desc}
+| ДРУГОЕ                = {self.desc or ''}
+| ОГЛАВЛЕНИЕ            = 
 | ПРЕДЫДУЩИЙ            = 
 | СЛЕДУЮЩИЙ             = 
 | КАЧЕСТВО              = 1 <!-- оценка по 4-х бальной шкале -->
@@ -195,12 +193,11 @@ def make_wikipage(d) -> str:
 | СТИЛЬ                 = text
 }}}}
 <div class="text">
-{d.wikified}
+{self.wikified}
 </div>
 
-{d.categories_string}
+{self.categories_string}
 """
-    return wiki_text
 
 
 class CommonData:
@@ -209,18 +206,26 @@ class CommonData:
     cid_translation = db.texts_categories_names.find_one(name='Переводы')
 
 
+def make_wikipage(r) -> str:
+    d = X.parse_obj(r)
+    d.clean_desc()
+    d.set_dates_published()
+    d.text_replaces()
+    d.make_wikititle()
+    d.categorization(CommonData)
+    wikipage = fill_wikipage(d)
+    return wikipage
+
+
+# test
 def make_wikipages_to_db():
     ta = db.all_tables
     col = ta.table.c
-    res = ta.find(col.wikified.isnot(None), col.title_ws.isnot(None), col.year <= 2022 - 4 - 71, do_upload=True, _limit=10)
+    res = ta.find(col.wikified.isnot(None), col.title_ws.isnot(None), col.year <= 2022 - 4 - 71, do_upload=True,
+                  _limit=10)
     # res = list(res)
     for r in res:
-        d = X.parse_obj(r)
-        d.clean_desc()
-        # d.make_wikititle()
-        # d.wiki_title = make_wikititle(r)
-        d.categorization(CommonData)
-        wikipage = make_wikipage(d)
+        wikipage = make_wikipaage(r)
         # db.db_htmls.upsert({'tid': d.tid, 'wikified': d.text}, ['tid'])
         # db.htmls.upsert({'tid': d.tid, 'wiki_page': wikipage, 'wiki_title': d.wiki_title}, ['tid'], ensure=True)
         print()

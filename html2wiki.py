@@ -7,7 +7,7 @@ import re
 from bs4 import BeautifulSoup, Comment, NavigableString
 import html as html_
 
-from db import *
+# from db import *
 from get_parsed_html import get_html
 from parser_html_to_wiki import *
 
@@ -144,7 +144,7 @@ class LibRu(HtmltoWikiBase):
                     if p.text.strip() == '':
                         p.unwrap()
 
-                strip_tag(h)  # удаление крайных \s
+                # strip_tag(h)  # удаление крайных \s
 
         # Если на странице нет h2 или h3, то менять h4 на h3
         h2s = list(soup.find_all('h2'))
@@ -157,13 +157,14 @@ class LibRu(HtmltoWikiBase):
         def p_in_headers(soup):
             # unwrap <p> в h если это одиночный <p>
             for h_ in header_tag_names:
-                for h in soup.find_all(h_):
+                hs = soup.find_all(h_)
+                for h in hs:
                     sub_p = h.find_all('p')
                     if len(sub_p) == 1:
                         sub_p[0].unwrap()
                     else:
                         continue
-                    strip_tag(h)
+                    # strip_tag(h)
                     # strip_newlines_from_tag(h)
 
         p_in_headers(soup)

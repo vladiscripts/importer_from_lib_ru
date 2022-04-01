@@ -15,16 +15,18 @@ from threading import RLock
 
 
 class DB:
-    def __init__(self, db_name: str, use_os_env: bool = True):
+    def __init__(self, db_name: str, use_os_env: bool = True, use_orm=True):
         self.db_name = db_name
-        engine_url = self.make_data_url(db_name, use_os_env)
+        engine_url = self.make_data_url(use_os_env)
         self.engine = create_engine(engine_url, echo=False)
-        if not database_exists(engin_uri):
-            create_database(engin_uri)
+        self.conn = self.engine.connect()
+        if not database_exists(engine_url):
+            create_database(engine_url)
         self.Session = sessionmaker(bind=self.engine)
         self.s = self.Session()
 
-        Base.metadata.create_all(self.engine)
+        if use_orm:
+            Base.metadata.create_all(self.engine)
 
         self.connect = dataset.connect(str(self.engine.url), engine_kwargs=dict(echo=self.engine.echo))
         #   #pool_size=10, max_overflow=20
@@ -33,7 +35,7 @@ class DB:
 
         # lock = RLock()
 
-    def make_data_url(self, use_os_env, driver_name='mysql+pymysql') -> str:
+    def make_data_url(self, use_os_env: bool, driver_name: str = 'mysql+pymysql') -> str:
         """
         Create an engine string (schema + netloc), like "mysql+pymysql://USER:PASSWORD@HOST"
         :param use_os_env: Use OS envs 'DB_USER', 'DB_PASSWORD', 'DB_HOST', instead the `cfg.py` file
@@ -48,7 +50,7 @@ class DB:
                 raise RuntimeError("Set the 'DB_USER', 'DB_PASSWORD', 'DB_HOST' OS env variables")
         else:
             from cfg import user, password, host
-        url = f'{driver_name}://{user}:{password}@{host}/{db_name}'
+        url = f'{driver_name}://{user}:{password}@{host}/{self.db_name}'
         return url
 
 # db_ = DB(db_name)

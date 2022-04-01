@@ -1,9 +1,11 @@
 import re
 import html as html_
 from bs4 import BeautifulSoup, Comment, NavigableString
-import db
+
+# import db
 
 re_spaces_many_no_newlines = re.compile(r'[^\S\r\n]+')
+
 
 def selector_from_html5(response):
     response = response.replace(
@@ -47,7 +49,8 @@ def get_html(tid=None):
 
         return tid, html, text_url
 
-def get_content_from_html(html:str) -> str:
+
+def get_content_from_html(html: str) -> str:
     if m := re_get_content_html.search(html):
         html = m.group(1)
         html = re.sub(r'</?xxx7>', '', html)
@@ -55,12 +58,17 @@ def get_content_from_html(html:str) -> str:
         html = re_spaces_many_no_newlines.sub(' ', html)  #   и множественные пробелы, без переводов строк
         html = re.sub(r'<p( [^>]*)?>\s*(<br>)+', r'<p\1>', html, flags=re.I)
 
+        # inline tags, пробелы и запятые/точки за тег
+        html = re.sub(r'([\s.,]+)</(b|i|em|strong|emphasis)>', r'</\2>\1', html, flags=re.DOTALL)
+
         return html
 
-def get_content_from_html_soup(soup)->str:
+
+def get_content_from_html_soup(soup) -> str:
     content = soup.find(text=lambda x: isinstance(x, Comment) and 'Собственно произведение' in x). \
         find_parent('noindex')
     return content
+
 
 def db_write_content_html():
     for r in db.htmls.all():

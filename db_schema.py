@@ -19,11 +19,11 @@ from sqlalchemy_utils.functions import database_exists, create_database
 from db_connector import *
 
 db_name = 'lib_ru'
-db_ = DB(db_name, use_os_env=True)
+db_ = DB(db_name, use_os_env=True, use_orm=False)
 
 metadata = MetaData(bind=db_.engine)
 
-titles = Table(
+_authors = Table(
     'authors', metadata,
     Column('id', Integer, primary_key=True, autoincrement=True),
     Column('slug', String(255), nullable=False, unique=True),
@@ -46,7 +46,7 @@ titles = Table(
     Column('year_dead', Integer),
 )
 
-titles = Table(
+_titles = Table(
     'titles', metadata,
     Column('id', Integer, primary_key=True, autoincrement=True),
     Column('slug', String(255), nullable=False),
@@ -64,7 +64,7 @@ titles = Table(
     Index('titles_author_id_slug_uindex', 'author_id', 'slug', unique=True)
 )
 
-wiki = Table(
+_wiki = Table(
     'wikified', metadata,
     Column('id', Integer, primary_key=True, autoincrement=True),
     Column('tid', Integer, ForeignKey('titles.id', ondelete='CASCADE', onupdate='CASCADE'), unique=True,
@@ -73,14 +73,14 @@ wiki = Table(
     Column('desc', Text),
 )
 
-wikisource_listpages = Table(
+_wikisource_listpages = Table(
     'wikisource_listpages', metadata,
     Column('id', Integer, primary_key=True, autoincrement=True),
     Column('pagename', String(400), nullable=False, unique=True),
     comment='23.01.2022'
 )
 
-texts_categories_names = Table(
+_texts_categories_names = Table(
     'texts_categories_names', metadata,
     Column('id', Integer, primary_key=True, autoincrement=True),
     Column('slug', String(255), nullable=False, unique=True),
@@ -88,7 +88,7 @@ texts_categories_names = Table(
     Column('name_ws', String(500), unique=True),
 )
 
-texts_categories = Table(
+_texts_categories = Table(
     'texts_categories', metadata,
     Column('id', Integer, primary_key=True, autoincrement=True),
     Column('tid', Integer, ForeignKey('titles.id', onupdate='CASCADE', ondelete='CASCADE')),
@@ -96,7 +96,7 @@ texts_categories = Table(
     Index('ix_texts_categories_890bc0857c960d5b', 'tid', 'category_id', unique=True)
 )
 
-images = Table(
+_images = Table(
     'images', metadata,
     Column('id', Integer, primary_key=True, autoincrement=True),
     Column('tid', Integer, ForeignKey('titles.id', onupdate='CASCADE', ondelete='CASCADE'), nullable=False),
@@ -106,16 +106,15 @@ images = Table(
     Index('images_tid_name_ws_uindex', 'tid', 'name_ws', unique=True)
 )
 
-htmls = Table(
+_htmls = Table(
     'htmls', metadata,
     Column('id', Integer, primary_key=True, autoincrement=True),
-    Column('tid', Integer, nullable=False, unique=True),
+    Column('tid', Integer, ForeignKey('titles.id', onupdate='CASCADE', ondelete='CASCADE'), nullable=False, unique=True),
     Column('html', LONGTEXT),
     Column('wiki', LONGTEXT),
-    ForeignKeyC('titles.id', onupdate='CASCADE', ondelete='CASCADE'),
 )
 
-desc = Table(
+_desc = Table(
     'desc_', metadata,
     Column('id', Integer, primary_key=True, autoincrement=True),
     Column('tid', Integer, ForeignKey('titles.id', onupdate='CASCADE', ondelete='CASCADE'), nullable=False,
@@ -129,7 +128,7 @@ desc = Table(
     Column('annotation_tag', Text),
 )
 
-authors_categories = Table(
+_authors_categories = Table(
     'authors_categories', metadata,
     Column('id', Integer, primary_key=True, autoincrement=True),
     Column('name_site', String(500), nullable=False, unique=True),
@@ -137,6 +136,72 @@ authors_categories = Table(
     Column('text_cat_by_author', String(500)),
     Column('text_lang_by_author', String(100)),
 )
+
+# all_tables = Table(
+#     'all_tables', metadata,
+#     Column('id', Integer, primary_key=True, autoincrement=True),
+#     Column('name_site', String(500), nullable=False, unique=True),
+#     Column('name_ws', String(500)),
+#     Column('text_cat_by_author', String(500)),
+#     Column('text_lang_by_author', String(100)),
+# )
+
+
+"""
+CREATE OR REPLACE VIEW all_tables as
+select
+#        'http://az.lib.ru' || a.slug || '/' || t.slug as text_url,
+       t.slug as slug_text,
+       t.text_url,
+       t.id as tid,
+       t.year,
+       t.size,
+       t.title,
+       t.title_ws,
+       t.desc as text_desc_raw,
+       d.desc as text_desc,
+       w.desc as text_desc_wikified,
+       t.oo,
+       t.uploaded as uploaded_text,
+       t.do_upload,
+       t.is_same_title_in_ws_already,
+       a.slug as slug_author,
+       a.id as author_id,
+       a.name,
+       a.family_parsed,
+       a.names_parsed,
+       a.name_WS,
+       a.live_time,
+       a.town,
+       a.litarea,
+       a.image_url_filename,
+       a.image_filename_wiki,
+       a.desc as author_desc,
+       a.is_author,
+       a.uploaded as uploaded_author,
+       a.year_dead,
+       h.html,
+       h.wiki,
+       w.text as wikified,
+       d.tid as desc_tid,
+       d.author_tag,
+       ac.name_ws as author_cat,
+       ac.text_lang_by_author as lang
+#        h.wikified
+from authors a
+         left join titles t on a.id = t.author_id
+         left join htmls h on t.id = h.tid
+         left join desc_ d on t.id = d.tid
+         left join wikified w on t.id = w.tid
+         left join authors_categories ac on a.litarea = ac.name_site;
+
+
+
+"""
+
+# db_host, db_user, db_pw = os.getenv('DB_HOST'),  os.getenv('DB_USER'),  os.getenv('DB_PASSWORD')
+# db_url = f'mysql+pymysql://{db_user}:{db_pw}@{db_host}/lib_ru'
+# db = dataset.connect(db_url, engine_kwargs=dict(echo=False))
 
 db = db_.connect
 
@@ -152,42 +217,3 @@ wiki = db.create_table('wikified')
 images = db.create_table('images')
 wikisource_listpages = db.create_table('wikisource_listpages')
 all_tables = db['all_tables']
-
-sql = '''
-CREATE VIEW all_tables  as
-      select
-             a.slug as author_slug,
-             a.name,
-             a.name_for_WS,
-             a.family_parsed_for_WS,
-             a.names_parsed_for_WS,
-             a.live_time,
-             a.town,
-             a.litarea,
-             a.image_url,
-             a.desc as author_desc,
-             t.slug as title_slug,
-             t.author_id,
-             t.year,
-             t.size,
-             t.title,
-             t.desc as title_desc,
-             t.oo,
-             'http://az.lib.ru' || a.slug || '/' || t.slug
-                    as text_url,
-             h.tid,
-             h.html,
-             h.wiki,
-             h.wikified,
-             h.author,
-             h.translator,
-             h.desc,
-             h.year,
-             h.author_tag,
-             h.year_tag,
-             h.annotation_tag
-      from authors a
-               left join titles t on a.id = t.author_id
-               left join htmls h on t.id = h.tid
-'''
-# db.execute(sql)
