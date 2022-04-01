@@ -132,7 +132,7 @@ def find_tag_with_attr_value_exactly(soup, tag: str, attr: str, attr_values: Uni
         raise NotImplementedError
 
     if isinstance(attr_values, str):
-        return soup.find_all(lambda e: e.name == tag and e.attrs.get(attr) == attr_values)
+        return soup.find_all(lambda e: e.name == tag and e.attrs == {attr: attr_values})
 
 
 def unwrap_tag(soup, tag: str, attrs: dict = None, attr_value_exactly=False):
