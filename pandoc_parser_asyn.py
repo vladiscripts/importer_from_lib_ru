@@ -329,7 +329,7 @@ def convert_pages_to_db_with_pandoc_on_several_threads():
 # text = convert_page(content_html)
 # print()
 
-processed = set()
+# processed = set()
 
 
 class AsyncWorker:
@@ -401,10 +401,10 @@ class AsyncWorker:
         h.wikicode = None
         if h.wiki:
             print('converted, to db', h.tid)
-            if h.tid in processed:
-                print('!!!! in processed already')
-            else:
-                processed.add(h.tid)
+            # if h.tid in processed:
+            #     print('!!!! in processed already')
+            # else:
+            #     processed.add(h.tid)
 
             await self.db_save_pool(h)
         else:
