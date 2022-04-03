@@ -36,7 +36,7 @@ class H(BaseModel):
     html: str
     soup: Optional[BeautifulSoup]
     wikicode: mwp.wikicode.Wikicode = None
-    wiki: Optional[str]  # = Field(..., alias='wiki2')
+    wiki: Optional[str] = Field(..., alias='wiki2')
     images: List[Image] = []
 
     class Config:
@@ -249,7 +249,7 @@ def process_images(h):
 count_pages_per_min = 0
 last_time = datetime.now()
 
-processed = set()
+# processed = set()
 
 q_feeder = queue.Queue(maxsize=50)
 
@@ -291,9 +291,8 @@ class AsyncWorker:
     # PAGES_PER_CORE :int
     i_core: int
 
-    def do_scan(self, i_core):
-        self.i_core = i_core
-        # self.offset = self.limit * self.i_core  # стартовые значения offset для запроса из БД
+    def start(self):
+        self.offset = self.limit * self.i_core  # стартовые значения offset для запроса из БД
         loop = asyncio.get_event_loop()
         loop.run_until_complete(self.asynchronous(loop))
         loop.close()
@@ -323,28 +322,29 @@ class AsyncWorker:
     async def process_images(self, h) -> H:
         return process_images(h)
 
-    # async def db_fill_pool(self) -> Optional[List[dict]]:
-    #     # t = db.all_tables
-    #     t = db.htmls
-    #     cols = t.table.c
-    #
-    #     while True:
-    #         res = t.find(
-    #             cols.html.is_not(None),
-    #             cols.wiki.is_(None),
-    #             # cols.wiki2.is_(None),
-    #             # tid=144927,  # wiki={'like':'%[[File:%'},
-    #             _limit=self.limit, _offset=self.offset)
-    #         # _limit=limit, _offset=offset)
-    #         if res.result_proxy.rowcount > 0:
-    #             self.offset += (self.limit * (self.i_core + 1))
-    #         else:
-    #             if self.offset > 0:
-    #                 self.offset = 0
-    #                 continue
-    #         break
-    #     rows = [r for r in res]
-    #     return rows
+    async def db_feeder(self) -> Optional[List[dict]]:
+        # t = db.all_tables
+        t = db.htmls
+        cols = t.table.c
+
+        while True:
+            res = t.find(
+                cols.html.is_not(None),
+                # cols.wiki.is_(None),
+                cols.wiki2.is_(None),
+                # tid=144927,  # wiki={'like':'%[[File:%'},
+                _limit=self.limit, _offset=self.offset)
+            # _limit=limit, _offset=offset)
+
+            if res.result_proxy.rowcount == 0:
+                if offset == 0:
+                    break
+                else:
+                    offset = 0
+            else:
+                self.offset += (self.limit * (self.i_core + 1))
+                rows = [r for r in res]
+                return rows
 
     async def db_save_pool(self, h) -> None:
         rows = [img.dict() for img in h.images]
@@ -352,7 +352,7 @@ class AsyncWorker:
             tx1['images'].delete(tid=h.tid)
             for row in rows:
                 tx1['images'].insert_ignore(row, ['tid', 'name_ws'])
-            tx1['htmls'].update({'tid': h.tid, 'wiki': h.wiki}, ['tid'])  # 'wiki2'
+            tx1['htmls'].update({'tid': h.tid, 'wiki2': h.wiki}, ['tid'])
 
     async def work_row(self, r):
         # r = await q_feeder.get(r)
@@ -375,9 +375,11 @@ class AsyncWorker:
         q_feeder.task_done()
 
 
-def start_scraping(i_core: int):
-    worker = AsyncWorker()
-    worker.do_scan(i_core)
+def start(i_core: int):
+    w = AsyncWorker()
+    # w.PAGES_PER_CORE = num_pages
+    w.i_core = i_core
+    w.start()
 
 
 def main():
@@ -388,7 +390,7 @@ def main():
     threading.Thread(target=db_feeder, daemon=True, name='db_feeder').start()
 
     with concurrent.futures.ProcessPoolExecutor(max_workers=NUM_CORES) as executor:
-        futures = [executor.submit(start_scraping, i_core=i) for i in range(NUM_CORES)]
+        futures = [executor.submit(start, i_core=i) for i in range(NUM_CORES)]
         ok = concurrent.futures.wait(futures)
 
         for future in ok.done:

@@ -27,7 +27,7 @@ from urllib.parse import quote_plus
 import pypandoc
 from pydantic import BaseModel, ValidationError, Field, validator, root_validator, Extra, dataclasses
 
-import db
+import db_schema as db
 
 
 class SelenuimSession:
