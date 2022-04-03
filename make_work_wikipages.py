@@ -136,7 +136,6 @@ class X(D):
             cats.append('Есть одноимённая страница не имевшаяся ранее, проверить на дубль и переименовать')
 
         cats = [f'Импорт/lib.ru/{c}' for c in cats]
-        # cats.append('Импорт/lib.ru')
 
         cats_from_db = [c.name_ws for r in db.texts_categories.find(tid=self.tid) for c in C.categories_cached
                         if c.cid == r['category_id']]
@@ -154,6 +153,8 @@ class X(D):
 
         if self.oo:
             cats.append(f'Дореформенная орфография')
+
+        cats.append('Импорт/lib.ru')
 
         self.categories = cats
         self.categories_string = '\n'.join([f'[[Категория:{c}]]' for c in cats])
@@ -232,4 +233,5 @@ def make_wikipages_to_db():
 
 
 if __name__ == '__main__':
-    wiki_text = make_wikipages_to_db()
+    pass
+    # wiki_text = make_wikipages_to_db()

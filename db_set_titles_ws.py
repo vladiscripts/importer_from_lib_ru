@@ -10,8 +10,11 @@ class TitleRow:
     id: int
     title: InitVar[str]
     family_parsed: InitVar[str]
+    oo: bool
+    title_ws_guess: str = None
     title_ws: str = None
     is_same_title_in_ws_already: bool = False
+
 
     def __post_init__(self, title, family_parsed):
         """ set title_ws """
@@ -19,6 +22,7 @@ class TitleRow:
         tw = db.wikisource_listpages
 
         title_ws = f'{title} ({family_parsed})'
+        self.title_ws_guess = title_ws if not self.oo else f'{title_ws}/ДО'
         i = 1
         while True:
             has_title_ws_already = bool(tw.find_one(pagename=title_ws))
