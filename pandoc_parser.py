@@ -289,8 +289,8 @@ def convert_pages_to_db_with_pandoc_on_several_threads():
         res = t.find(
             cols.html.is_not(None),
             # cols.wiki.is_(None),
-            # cols.wiki2.is_(None),
-            tid=144927,  # wiki={'like':'%[[File:%'},
+            cols.wiki2.is_(None),
+            # tid=144927,  # wiki={'like':'%[[File:%'},
             _limit=q.maxsize, _offset=offset)
         if res.result_proxy.rowcount == 0:
             if offset == 0:

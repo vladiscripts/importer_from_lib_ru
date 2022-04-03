@@ -137,14 +137,14 @@ def main():
         chunk = 1000  # rows
         offset = 0
         while True:
-            stm = f"SELECT {tt.name}.id as tid,wiki,{td.name}.desc as text_desc " \
+            stm = f"SELECT {tt.name}.id as tid,wiki2 as wiki,{td.name}.desc as text_desc " \
                   f'FROM {tt.name} ' \
                   f'LEFT JOIN {th.name} ON {tt.c.id}={th.c.tid} ' \
                   f'LEFT JOIN {tw.name} ON {tt.c.id}={tw.c.tid} ' \
                   f'LEFT JOIN {td.name} ON {tt.c.id}={td.c.tid} ' \
                   f'WHERE {tt.c.do_upload} IS TRUE ' \
-                  f'AND {th.c.wiki} IS NOT NULL AND {tw.c.text} IS NULL ' \
-                  f'LIMIT {chunk} OFFSET {offset};'
+                  f'AND {th.c.wiki2} IS NOT NULL ' \
+                  f'LIMIT {chunk} OFFSET {offset};'  #  f'AND {tw.c.text} IS NULL ' \
             # f'LIMIT {q.maxsize} OFFSET {offset};'
             # f'LIMIT 1000;'
             resultsproxy = db.db.query(stm)

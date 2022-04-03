@@ -176,6 +176,7 @@ async def convert_page(h: H):
 
     text = re.sub(r'<div align="center">(.+?)</div>', r'<center>\1</center>', text, flags=re.DOTALL)
     text = re.sub(r'^(?:<center>\s*)?(\* \* \*|\*\*\*)(?:\s*</center>)?$', r'{{***}}', text, flags=re.MULTILINE)
+    text = re.sub(r'^==+\s*\*\s*\*\s*\*\s*==+$', r'{{***}}', text, flags=re.MULTILINE)
     text = re.sub(r'^<center>\s*-{5}\s*</center>$', r'{{---|width=6em}}', text, flags=re.MULTILINE)
     text = re.sub(r'^<center>\s*-{6,}\s*</center>$', r'{{---|width=10em}}', text, flags=re.MULTILINE)
     text = re.sub(r'<center>\s*(\[\[File:[^]]+?)\]\]\s*</center>', r'\1|center]]', text)
@@ -251,6 +252,7 @@ last_time = datetime.now()
 
 # processed = set()
 
+# q_feeder = asyncio.Queue(maxsize=50)
 q_feeder = queue.Queue(maxsize=50)
 
 
@@ -282,6 +284,7 @@ def db_feeder():
                 q_feeder.put(r)
         while q_feeder.unfinished_tasks:
             time.sleep(0.5)
+        # await asyncio.sleep(1)
     # q_feeder.task_done()
 
 
@@ -298,6 +301,12 @@ class AsyncWorker:
         loop.close()
 
     async def asynchronous(self, loop):
+        tasks = [asyncio.create_task(self.work_row()) for i in range(2)]
+        finished, unfinished = await asyncio.wait(tasks)
+        if len(unfinished):
+            logging.error('have unfinished async tasks')
+
+    async def _asynchronous(self, loop):
         while True:
             # if q_feeder.all_tasks_done:
             #     break
@@ -354,25 +363,28 @@ class AsyncWorker:
                 tx1['images'].insert_ignore(row, ['tid', 'name_ws'])
             tx1['htmls'].update({'tid': h.tid, 'wiki2': h.wiki}, ['tid'])
 
-    async def work_row(self, r):
-        # r = await q_feeder.get(r)
-        h = H.parse_obj(r)
-        h = await convert_page(h)
-        # h = await self.convert_page(h)
-        h = await self.process_images(h)
-        h.html = None
-        h.wikicode = None
-        if h.wiki:
-            print('converted, to db', h.tid)
-            # if h.tid in processed:
-            #     print('!!!! in processed already')
-            # else:
-            #     processed.add(h.tid)
+    async def work_row(self):
+        while True:
+            r = await q_feeder.get()
+            if r is None:
+                break
+            h = H.parse_obj(r)
+            h = await convert_page(h)
+            # h = await self.convert_page(h)
+            h = await self.process_images(h)
+            h.html = None
+            h.wikicode = None
+            if h.wiki:
+                print('converted, to db', h.tid)
+                # if h.tid in processed:
+                #     print('!!!! in processed already')
+                # else:
+                #     processed.add(h.tid)
 
-            # await self.db_save_pool(h)
-        else:
-            print('no wiki', h.tid)
-        q_feeder.task_done()
+                # await self.db_save_pool(h)
+            else:
+                print('no wiki', h.tid)
+            q_feeder.task_done()
 
 
 def start(i_core: int):
