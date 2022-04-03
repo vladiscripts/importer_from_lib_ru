@@ -332,13 +332,13 @@ def convert_pages_to_db_with_pandoc_on_several_threads():
 processed = set()
 
 
-class Scanner:
+class AsyncWorker:
     offset = 0  # db_feel_pool    # q.maxsize
     limit = 100  # db_feel_pool
     # PAGES_PER_CORE :int
     i_core: int
 
-    def do_scan(self):
+    def start(self):
         self.offset = self.limit * self.i_core  # стартовые значения offset для запроса из БД
         loop = asyncio.get_event_loop()
         loop.run_until_complete(self.asynchronous(loop))
@@ -346,7 +346,7 @@ class Scanner:
 
     async def asynchronous(self, loop):
         while True:
-            rows = await self.db_fill_pool()
+            rows = await self.db_feeder()
             if not rows:
                 break
             tasks = [asyncio.create_task(self.work_row(r)) for r in rows]
@@ -360,7 +360,7 @@ class Scanner:
     async def process_images(self, h) -> H:
         return process_images(h)
 
-    async def db_fill_pool(self) -> Optional[List[dict]]:
+    async def db_feeder(self) -> Optional[List[dict]]:
         # t = db.all_tables
         t = db.htmls
         cols = t.table.c
@@ -373,15 +373,16 @@ class Scanner:
                 # tid=144927,  # wiki={'like':'%[[File:%'},
                 _limit=self.limit, _offset=self.offset)
             # _limit=limit, _offset=offset)
-            if res.result_proxy.rowcount > 0:
-                self.offset += (self.limit * (self.i_core + 1))
+
+            if res.result_proxy.rowcount == 0:
+                if offset == 0:
+                    break
+                else:
+                    offset = 0
             else:
-                if self.offset > 0:
-                    self.offset = 0
-                    continue
-            break
-        rows = [r for r in res]
-        return rows
+                self.offset += (self.limit * (self.i_core + 1))
+                rows = [r for r in res]
+                return rows
 
     async def db_save_pool(self, h) -> None:
         rows = [img.dict() for img in h.images]
@@ -410,11 +411,11 @@ class Scanner:
             print('no wiki', h.tid)
 
 
-def start_scraping(i_core: int):
-    s = Scanner()
-    # s.PAGES_PER_CORE = num_pages
-    s.i_core = i_core
-    s.do_scan()
+def start(i_core: int):
+    w = AsyncWorker()
+    # w.PAGES_PER_CORE = num_pages
+    w.i_core = i_core
+    w.start()
 
 
 def main():
@@ -423,7 +424,7 @@ def main():
     # PAGES_PER_CORE = floor(NUM_PAGES / NUM_CORES)
 
     with concurrent.futures.ProcessPoolExecutor(max_workers=NUM_CORES) as executor:
-        futures = [executor.submit(start_scraping, i_core=i) for i in range(NUM_CORES)]
+        futures = [executor.submit(start, i_core=i) for i in range(NUM_CORES)]
         ok = concurrent.futures.wait(futures)
 
         for future in ok.done:
