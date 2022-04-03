@@ -40,7 +40,8 @@ def posting_page(d: D):
         print(f'illegal char(s) in {title=}')
         return
     page = pwb.Page(SITE, title)
-    if page.exists():
+    if not page.exists():  # todo: to reposting
+        return
         print(f'page exists {tid=}, {title=}')
         db.titles.update({'id': tid, 'is_same_title_in_ws_already': True}, ['id'])
         # page.title += '/Дубль'
@@ -61,7 +62,9 @@ def posting_page(d: D):
             Path(f'error_wikipages_texts', uuid.uuid4().hex + '.wiki').write_text(f'{title}\n{d.wikipage_text}')
 
         else:
-            db.titles.update({'id': tid, 'uploaded': True}, ['id'])
+            db.titles.update({'id': tid,
+                              'uploaded': True, 'updated_as_named_guess':  True,
+                              'title_ws_as_uploaded':title}, ['id'])
             print(f'{tid=}, {d.year_dead=}')
             return True
 
@@ -74,12 +77,15 @@ def make_wikipages_to_db():
     limit = 100
     while True:
         res = ta.find(
-            cola.wikified.isnot(None), cola.title_ws.isnot(None), 
-#            cola.text_len < 2048, 
+            cola.wikified.isnot(None),
+            # cola.title_ws.isnot(None),
+            cola.title_ws_guess.isnot(None),
+#            cola.text_len < 2048,
             cola.year_dead <= year_limited,
             # cola.wikified.not_like('%feb-web.ru%'),
             # col.lang.isnot(None),
-            uploaded_text=False, do_upload=True,
+            # uploaded_text=False, do_upload=True,
+            do_update_as_named_guess=True, updated_as_named_guess=False,
             # is_same_title_in_ws_already=False,
             _offset=offset, _limit=limit)
         if res.result_proxy.rowcount == 0:

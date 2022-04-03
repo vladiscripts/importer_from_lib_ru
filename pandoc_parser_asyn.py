@@ -176,6 +176,7 @@ async def convert_page(h: H):
 
     text = re.sub(r'<div align="center">(.+?)</div>', r'<center>\1</center>', text, flags=re.DOTALL)
     text = re.sub(r'^(?:<center>\s*)?(\* \* \*|\*\*\*)(?:\s*</center>)?$', r'{{***}}', text, flags=re.MULTILINE)
+    text = re.sub(r'^==+\s*\*\s*\*\s*\*\s*==+$', r'{{***}}', text, flags=re.MULTILINE)
     text = re.sub(r'^<center>\s*-{5}\s*</center>$', r'{{---|width=6em}}', text, flags=re.MULTILINE)
     text = re.sub(r'^<center>\s*-{6,}\s*</center>$', r'{{---|width=10em}}', text, flags=re.MULTILINE)
     text = re.sub(r'<center>\s*(\[\[File:[^]]+?)\]\]\s*</center>', r'\1|center]]', text)
@@ -248,77 +249,6 @@ def process_images(h):
 
 count_pages_per_min = 0
 last_time = datetime.now()
-
-
-def convert_pages_to_db_with_pandoc_on_several_threads():
-    lock = threading.RLock()
-    q = queue.Queue(maxsize=40)
-    db_q = queue.Queue(maxsize=10)
-
-    def db_save_pool():
-        while True:
-            while db_q.empty():
-                time.sleep(1)
-            h = db_q.get()
-
-            rows = [img.dict() for img in h.images]
-            with db.db as tx1:
-                tx1['images'].delete(tid=h.tid)
-                for row in rows:
-                    tx1['images'].insert_ignore(row, ['tid', 'name_ws'])
-                tx1['htmls'].update({'tid': h.tid, 'wiki2': h.wiki}, ['tid'])
-
-            db_q.task_done()
-
-    def worker():
-        while True:
-            while q.empty():
-                time.sleep(1)
-
-            r = q.get()
-            h = H.parse_obj(r)
-            h = convert_page(h)
-            h = process_images(h)
-            h.html = None
-            h.wikicode = None
-            if h.wiki:
-                print('converted, to db', h.tid)
-                db_q.put(h)
-            else:
-                print('no wiki', h.tid)
-            q.task_done()
-
-    threading.Thread(target=db_save_pool, daemon=True, name='db_save_pool').start()
-    for r in range(q.maxsize):
-        threading.Thread(target=worker, daemon=True).start()
-
-    # t = db.all_tables
-    t = db.htmls
-    cols = t.table.c
-
-    offset = 0
-    while True:
-        res = t.find(
-            cols.html.is_not(None),
-            # cols.wiki.is_(None),
-            # cols.wiki2.is_(None),
-            tid=144927,  # wiki={'like':'%[[File:%'},
-            _limit=q.maxsize, _offset=offset)
-        if res.result_proxy.rowcount == 0:
-            if offset == 0:
-                break
-            else:
-                offset = 0
-        offset += q.maxsize
-        for r in res:
-            q.put(r)
-
-        # while q.unfinished_tasks > 0:
-        #     time.sleep(3)
-
-    q.join()
-    db_q.join()
-    print('All work completed')
 
 
 # if __name__ == '__main__':

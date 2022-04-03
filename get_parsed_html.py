@@ -58,8 +58,8 @@ def get_content_from_html(html: str) -> str:
         html = re_spaces_many_no_newlines.sub(' ', html)  #   и множественные пробелы, без переводов строк
         html = re.sub(r'<p( [^>]*)?>\s*(<br>)+', r'<p\1>', html, flags=re.I)
 
-        # inline tags, пробелы и запятые/точки за тег
-        html = re.sub(r'([\s,]+)</(b|i|em|strong|emphasis)>', r'</\2>\1', html, flags=re.DOTALL)
+        # inline tags, пробелы и запятые за тег
+        html = re.sub(r'((?:[\s,]|--)+)</(b|i|em|strong|emphasis)>', r'</\2>\1', html, flags=re.DOTALL)
 
         return html
 

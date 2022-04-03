@@ -43,11 +43,15 @@ def db_set_titles_ws():
 
     for ra in db.authors.find():  # is_author=True
         # print(ra['id'])
-        rows_titles = t.find(col.title.is_not(None), author_id=ra['id'])  # cols.title_ws.is_(None),
+        rows_titles = t.find(col.title.is_not(None), author_id=ra['id'])  # cols.title_ws.is_(None),  ,id=87481
         for rt in rows_titles:
-            db_row = TitleRow(id=rt['id'], title=rt['title'], family_parsed=ra['family_parsed'])
-            print(f"tid={db_row.id} title='{rt['title']}' {db_row.title_ws=}")
-            t.update(asdict(db_row), ['id'])
+            db_row = TitleRow(id=rt['id'], title=rt['title'], family_parsed=ra['family_parsed'], oo=rt['oo'])
+            print(f"{db_row.id=} {rt['title']=} {db_row.title_ws=} {db_row.title_ws_guess=}")
+            t.update({
+                'id': db_row.id,
+                'is_same_title_in_ws_already': db_row.is_same_title_in_ws_already,
+                'title_ws': db_row.title_ws,
+                'title_ws_guess': db_row.title_ws_guess}, ['id'])
 
 
 if __name__ == '__main__':
