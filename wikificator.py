@@ -23,6 +23,7 @@ import json
 from datetime import datetime, timedelta, date
 import time
 from typing import Optional, Union, Tuple, List, NamedTuple
+from dataclasses import dataclass
 from urllib.parse import quote_plus
 import pypandoc
 from pydantic import BaseModel, ValidationError, Field, validator, root_validator, Extra, dataclasses
@@ -86,40 +87,25 @@ class Scraper(SelenuimSession):
         text_new = self.s.driver.execute_script("return window.Wikify(arguments[0]);", text)
         return text_new
 
-
-class D(NamedTuple):
+@dataclass
+class D:
     tid: int
-    text: Optional[str]
-    desc: Optional[str]
-
-
-def wikify(r, scraper):
-    text = scraper.wikify(r['wiki'])
-    desc = scraper.wikify(r['text_desc']) if r['text_desc'] else ''
-    d = D(tid=r['tid'], text=text, desc=desc)
-    return d
+    # wiki_raw: Optional[str]
+    text: Optional[str] = None
+    desc: Optional[str] = None
 
 
 def wikify_all_into_db():
     # from wikificator import Scraper
     scraper = Scraper()
     ta = db.all_tables
-    for r in ta.find(ta.table.c.wiki.isnot(None), do_upload=True):
+    for r in ta.find(ta.table.c.wiki2.isnot(None), do_upload=True):
+        tid = r['tid']
         print(tid, end=' ')
-        d = wikify(r)
-        # db.htmls.upsert({'tid': tid, 'wikified': text})
-        db.wiki.update({'tid': d.tid, 'wikified': d.text, 'desc': d.desc}, ['tid'])
+        text = scraper.wikify(r['wiki'])
+        desc = scraper.wikify(r['text_desc']) if r['text_desc'] else ''
+        db.wiki.update({'tid': tid, 'wikified': text, 'desc': desc}, ['tid'])
         print('updated')
-
-
-def test():
-    scraper = Scraper()
-    try:
-        wikitext = scraper.wikify(text='-- dd  f')
-    except Exception as e:
-        print(e)
-    finally:
-        scraper.s.driver.quit()
 
 
 def main():
@@ -127,7 +113,7 @@ def main():
     q = queue.Queue(maxsize=20)  # fifo_queue
     db_q = queue.Queue(maxsize=5)
 
-    def db_fill_pool():
+    def feeder():
         # ta = db.all_tables
         tt = db.titles.table
         th = db.htmls.table
@@ -142,18 +128,24 @@ def main():
                   f'LEFT JOIN {th.name} ON {tt.c.id}={th.c.tid} ' \
                   f'LEFT JOIN {tw.name} ON {tt.c.id}={tw.c.tid} ' \
                   f'LEFT JOIN {td.name} ON {tt.c.id}={td.c.tid} ' \
-                  f'WHERE {tt.c.do_upload} IS TRUE ' \
-                  f'AND {th.c.wiki2} IS NOT NULL ' \
-                  f'LIMIT {chunk} OFFSET {offset};'  #  f'AND {tw.c.text} IS NULL ' \
+                  f'WHERE ' \
+                  f'{th.c.wiki2} IS NOT NULL ' \
+                  f'AND {tw.c.text} IS NULL ' \
+                  f'LIMIT {chunk} OFFSET {offset};'  # f'AND {tw.c.text} IS NULL ' \
+            # f'{tt.c.do_upload} IS TRUE ' \ f'AND ' \
             # f'LIMIT {q.maxsize} OFFSET {offset};'
             # f'LIMIT 1000;'
-            resultsproxy = db.db.query(stm)
+            res = db.db.query(stm)
             # resultsproxy = t.find(ta.table.c.wiki.is_not(None), ta.table.c.wikified.is_(None), do_upload=1, _limit=q.maxsize, _offset=offset)
-            if resultsproxy.result_proxy.rowcount == 0:
-                break
-            for r in resultsproxy:
-                q.put(r)
+            if res.result_proxy.rowcount == 0:
+                if offset == 0:
+                    break
+                else:
+                    offset = 0
+                    continue
             offset += chunk  # q.maxsize
+            for r in res:
+                q.put(r)
 
     def worker():
         try:
@@ -164,12 +156,14 @@ def main():
                     # print(f'q.empty sleep')
                     time.sleep(0.2)
                 r = q.get()
-                print(r['tid'])
-                d = wikify(r, scraper)
+                print(r['tid'], end=' ')
+                d = D(tid=r['tid'],
+                      text=scraper.wikify(r['wiki']),
+                      desc=scraper.wikify(r['text_desc']) if r['text_desc'] else '')
                 if d.text:
                     while db_q.full():
                         time.sleep(0.2)
-                    db_q.put(d)
+                db_q.put(d)
 
                 q.task_done()
 
@@ -178,7 +172,7 @@ def main():
         finally:
             scraper.s.driver.quit()
 
-    def db_save_pool():
+    def db_save():
         while True:
             while db_q.empty():
                 # print(f'db_q.empty sleep')
@@ -199,7 +193,7 @@ def main():
             db_q.task_done()
 
     print('find db for rows to work, initial threads')
-    threading.Thread(target=db_save_pool, name='db_save', daemon=True).start()
+    threading.Thread(target=db_save, name='db_save', daemon=True).start()
     for r in range(q.maxsize):
         threading.Thread(target=worker, daemon=True).start()
     # threading.Thread(target=db_fill_pool, name='db_fill_pool', daemon=True).start()
@@ -207,7 +201,7 @@ def main():
     # t = db.all_tables
     # cols = t.table.c
 
-    db_fill_pool()
+    feeder()
 
     # block until all tasks are done
     q.join()

@@ -274,9 +274,9 @@ class AsyncWorker:
         loop.run_until_complete(self.asynchronous(loop))
         loop.close()
 
-    async def asynchronous(self, loop):
+    async def _asynchronous(self, loop):
         while True:
-            rows = await self.db_feeder()
+            rows = await self.feeder()
             if not rows:
                 break
             tasks = [asyncio.create_task(self.work_row(r)) for r in rows]
@@ -284,13 +284,22 @@ class AsyncWorker:
             if len(unfinished):
                 logging.error('have unfinished async tasks')
 
+    async def asynchronous(self, loop):
+        rows = await self.feeder()
+        tasks = [asyncio.create_task(self.work_row(r)) for r in rows]
+
+
+        # finished, unfinished = await asyncio.wait(tasks)
+        # if len(unfinished):
+        #     logging.error('have unfinished async tasks')
+
     async def convert_page(self, h) -> H:
         return convert_page(h)
 
     async def process_images(self, h) -> H:
         return process_images(h)
 
-    async def db_feeder(self) -> Optional[List[dict]]:
+    async def feeder(self) -> Optional[List[dict]]:
         # t = db.all_tables
         t = db.htmls
         cols = t.table.c
@@ -303,16 +312,15 @@ class AsyncWorker:
                 # tid=144927,  # wiki={'like':'%[[File:%'},
                 _limit=self.limit, _offset=self.offset)
             # _limit=limit, _offset=offset)
-
             if res.result_proxy.rowcount == 0:
-                if offset == 0:
+                if self.offset == 0:
                     break
                 else:
-                    offset = 0
-            else:
-                self.offset += (self.limit * (self.i_core + 1))
-                rows = [r for r in res]
-                return rows
+                    self.offset = 0
+                    continue
+            self.offset += (self.limit * (self.i_core + 1))
+            rows = [r for r in res]
+            return rows
 
     async def db_save_pool(self, h) -> None:
         rows = [img.dict() for img in h.images]
@@ -350,7 +358,7 @@ def start(i_core: int):
 
 def main():
     # NUM_PAGES = 100  # Суммарное количество страниц для скрапинга
-    NUM_CORES = cpu_count() - 1  # Количество ядер CPU (влкючая логические)
+    NUM_CORES = 10 # cpu_count() - 1  # Количество ядер CPU (влкючая логические)
     # PAGES_PER_CORE = floor(NUM_PAGES / NUM_CORES)
 
     with concurrent.futures.ProcessPoolExecutor(max_workers=NUM_CORES) as executor:

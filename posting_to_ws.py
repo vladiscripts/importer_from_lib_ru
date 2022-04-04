@@ -63,8 +63,9 @@ def posting_page(d: D):
 
         else:
             db.titles.update({'id': tid,
-                              'uploaded': True, 'updated_as_named_guess':  True,
-                              'title_ws_as_uploaded':title}, ['id'])
+                              'uploaded': True,
+                              'updated_as_named_guess': True,
+                              'title_ws_as_uploaded': title}, ['id'])
             print(f'{tid=}, {d.year_dead=}')
             return True
 
@@ -80,7 +81,7 @@ def make_wikipages_to_db():
             cola.wikified.isnot(None),
             # cola.title_ws.isnot(None),
             cola.title_ws_guess.isnot(None),
-#            cola.text_len < 2048,
+            #            cola.text_len < 2048,
             cola.year_dead <= year_limited,
             # cola.wikified.not_like('%feb-web.ru%'),
             # col.lang.isnot(None),
@@ -89,8 +90,11 @@ def make_wikipages_to_db():
             # is_same_title_in_ws_already=False,
             _offset=offset, _limit=limit)
         if res.result_proxy.rowcount == 0:
-            print(f'did not found rows in DB')
-            break
+            if offset == 0:
+                break
+            else:
+                offset = 0
+                continue
         for r in res:
             d = make_work_wikipages.X.parse_obj(r)
             d.make_wikipage()
