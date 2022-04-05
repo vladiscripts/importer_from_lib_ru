@@ -222,16 +222,12 @@ async def convert_page(h: H):
     # mwp.parse('{{right|}}').nodes[0]
 
     h.wikicode = wc
-    text = str(wc)
-    h.wiki = strip_wikitext(text)
-
     return h
 
 
 def process_images(h):
     """ to simple names of images """
-    wc = h.wikicode
-    for f in wc.filter_wikilinks(matches=lambda x: x.title.lower().startswith('file')):
+    for f in h.wikicode.filter_wikilinks(matches=lambda x: x.title.lower().startswith('file')):
         link = re.sub(r'^[Ff]ile:', '', str(f.title))
         p = Path(link)
         # f.title = re.sub(r'^.+?/(text_\d+_).*?/([^/]+)$', r'File:\1\2', str(f.title))
@@ -251,14 +247,6 @@ count_pages_per_min = 0
 last_time = datetime.now()
 
 
-# if __name__ == '__main__':
-# convert_pages_to_db_with_pandoc_on_several_threads()
-
-# tid, html, url = get_html(tid=tid)
-# content_html = get_content_from_html(html)
-# text = convert_page(content_html)
-# print()
-
 # processed = set()
 
 
@@ -274,7 +262,7 @@ class AsyncWorker:
         loop.run_until_complete(self.asynchronous(loop))
         loop.close()
 
-    async def _asynchronous(self, loop):
+    async def asynchronous(self, loop):
         while True:
             rows = await self.feeder()
             if not rows:
@@ -283,18 +271,6 @@ class AsyncWorker:
             finished, unfinished = await asyncio.wait(tasks)
             if len(unfinished):
                 logging.error('have unfinished async tasks')
-
-    async def asynchronous(self, loop):
-        rows = await self.feeder()
-        tasks = [asyncio.create_task(self.work_row(r)) for r in rows]
-
-
-        # finished, unfinished = await asyncio.wait(tasks)
-        # if len(unfinished):
-        #     logging.error('have unfinished async tasks')
-
-    async def convert_page(self, h) -> H:
-        return convert_page(h)
 
     async def process_images(self, h) -> H:
         return process_images(h)
@@ -309,7 +285,7 @@ class AsyncWorker:
                 cols.html.is_not(None),
                 # cols.wiki.is_(None),
                 cols.wiki2.is_(None),
-                # tid=144927,  # wiki={'like':'%[[File:%'},
+                # tid=88126, # wiki2={'like': '%[[File:%'},
                 _limit=self.limit, _offset=self.offset)
             # _limit=limit, _offset=offset)
             if res.result_proxy.rowcount == 0:
@@ -333,8 +309,8 @@ class AsyncWorker:
     async def work_row(self, r):
         h = H.parse_obj(r)
         h = await convert_page(h)
-        # h = await self.convert_page(h)
         h = await self.process_images(h)
+        h.wiki = strip_wikitext(str(h.wikicode))
         h.html = None
         h.wikicode = None
         if h.wiki:
@@ -358,7 +334,7 @@ def start(i_core: int):
 
 def main():
     # NUM_PAGES = 100  # Суммарное количество страниц для скрапинга
-    NUM_CORES = 10 # cpu_count() - 1  # Количество ядер CPU (влкючая логические)
+    NUM_CORES = 10  # cpu_count() - 1  # Количество ядер CPU (влкючая логические)
     # PAGES_PER_CORE = floor(NUM_PAGES / NUM_CORES)
 
     with concurrent.futures.ProcessPoolExecutor(max_workers=NUM_CORES) as executor:
