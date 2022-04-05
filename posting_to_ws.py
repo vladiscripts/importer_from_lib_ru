@@ -31,10 +31,10 @@ def posting_page(d: D):
             page.save(summary=summary)
 
     tid = d.tid
-    title = d.title_ws
+    title = d.title_ws_proposed
 
     if len(title.encode()) >= 255:
-        print(f'length > 255 bytes, {title=}')
+        print(f'title length > 255 bytes, {title=}')
         return
     elif re.search(r'[\[\]]', title):
         print(f'illegal char(s) in {title=}')
@@ -43,7 +43,7 @@ def posting_page(d: D):
     if not page.exists():  # todo: to reposting
         return
         print(f'page exists {tid=}, {title=}')
-        db.titles.update({'id': tid, 'is_same_title_in_ws_already': True}, ['id'])
+        db.titles.update({'id': tid, db.Titles.is_already_this_title_in_ws.name: True}, ['id'])
         # page.title += '/Дубль'
         # page.text = r['wiki_page'] + '\n[[Категория:Импорт/lib.ru/Дубли имён существующих страниц]]'
         # if page.isRedirectPage():
@@ -64,7 +64,7 @@ def posting_page(d: D):
         else:
             db.titles.update({'id': tid,
                               'uploaded': True,
-                              'updated_as_named_guess': True,
+                              'updated_as_named_proposed': True,
                               'title_ws_as_uploaded': title}, ['id'])
             print(f'{tid=}, {d.year_dead=}')
             return True
@@ -80,13 +80,13 @@ def make_wikipages_to_db():
         res = ta.find(
             cola.wikified.isnot(None),
             # cola.title_ws.isnot(None),
-            cola.title_ws_guess.isnot(None),
+            cola.title_ws_proposed.isnot(None),
             #            cola.text_len < 2048,
             cola.year_dead <= year_limited,
             # cola.wikified.not_like('%feb-web.ru%'),
             # col.lang.isnot(None),
             # uploaded_text=False, do_upload=True,
-            do_update_as_named_guess=True, updated_as_named_guess=False,
+            do_update_as_named_proposed=True, updated_as_named_proposed=False,
             # is_same_title_in_ws_already=False,
             _offset=offset, _limit=limit)
         if res.result_proxy.rowcount == 0:

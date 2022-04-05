@@ -21,129 +21,138 @@ from db_connector import *
 db_name = 'lib_ru'
 db_ = DB(db_name, use_os_env=True, use_orm=False)
 
-metadata = MetaData(bind=db_.engine)
+# metadata = MetaData(bind=db_.engine)
+Base = declarative_base(bind=db_.engine)
 
-_authors = Table(
-    'authors', metadata,
-    Column('id', Integer, primary_key=True, autoincrement=True),
-    Column('slug', String(255), nullable=False, unique=True),
-    Column('name', String(1000), nullable=False),
-    Column('family_parsed', String(255)),
-    Column('names_parsed', String(255)),
-    Column('live_time', String(255)),
-    Column('town', Text),
-    Column('litarea', String(255)),
-    Column('image_url_filename', String(255)),
-    Column('desc', Text),
-    Column('name_WS', String(1000)),
-    Column('image_filename_wiki', Text),
-    Column('image_urls', Text),
-    Column('images', Text),
-    Column('filename', Text),
-    Column('is_author', Boolean, default=1, nullable=False),
-    Column('uploaded', Boolean, default=0, nullable=False),
-    Column('image_url', Text),
-    Column('year_dead', Integer),
-)
 
-_titles = Table(
-    'titles', metadata,
-    Column('id', Integer, primary_key=True, autoincrement=True),
-    Column('slug', String(255), nullable=False),
-    Column('author_id', Integer, ForeignKey('authors.id', ondelete='CASCADE', onupdate='CASCADE'), nullable=False),
-    Column('year', Integer),
-    Column('size', Integer),
-    Column('title', Text),
-    Column('desc', Text),
-    Column('oo', Boolean, default=0),
-    Column('do_upload', Boolean, default=0, nullable=False),
-    Column('is_same_title_in_ws_already', Boolean, default=0),
-    Column('uploaded', Boolean, default=0, nullable=False),
-    Column('text_url', Text),
-    Column('title_ws', String(500), unique=True),
-    Index('titles_author_id_slug_uindex', 'author_id', 'slug', unique=True)
-)
+class Authors(Base):
+    __tablename__ = 'authors'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    slug = Column(String(255), nullable=False, unique=True)
+    name = Column(String(1000), nullable=False)
+    family_parsed = Column(String(255))
+    names_parsed = Column(String(255))
+    live_time = Column(String(255))
+    town = Column(Text)
+    litarea = Column(String(255))
+    image_url_filename = Column(String(255))
+    desc = Column(Text)
+    name_WS = Column(String(1000))
+    image_filename_wiki = Column(Text)
+    image_urls = Column(Text)
+    images = Column(Text)
+    filename = Column(Text)
+    is_author = Column(Boolean, default=1, nullable=False)
+    uploaded = Column(Boolean, default=0, nullable=False)
+    image_url = Column(Text)
+    year_dead = Column(Integer)
 
-_wiki = Table(
-    'wikified', metadata,
-    Column('id', Integer, primary_key=True, autoincrement=True),
-    Column('tid', Integer, ForeignKey('titles.id', ondelete='CASCADE', onupdate='CASCADE'), unique=True,
-           nullable=False),
-    Column('text', LONGTEXT),
-    Column('desc', Text),
-)
 
-_wikisource_listpages = Table(
-    'wikisource_listpages', metadata,
-    Column('id', Integer, primary_key=True, autoincrement=True),
-    Column('pagename', String(400), nullable=False, unique=True),
-    comment='23.01.2022'
-)
+class Titles(Base):
+    __tablename__ = 'titles'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    slug = Column(String(255), nullable=False)
+    author_id = Column(Integer, ForeignKey('authors.id', ondelete='CASCADE', onupdate='CASCADE'), nullable=False)
+    year = Column(Integer)
+    size = Column(Integer)
+    title = Column(Text)
+    desc = Column(Text)
+    oo = Column(Boolean, default=0)
+    is_already_this_title_in_ws = Column(Boolean, default=0)
+    do_upload = Column(Boolean, default=0, nullable=False)
+    uploaded = Column(Boolean, default=0, nullable=False)
+    do_update_as_named_proposed = Column(Boolean, default=0, nullable=False)
+    updated_as_named_proposed = Column(Boolean, default=0, nullable=False)
+    text_url = Column(Text)
+    title_ws_proposed = Column(String(500), unique=True)
 
-_texts_categories_names = Table(
-    'texts_categories_names', metadata,
-    Column('id', Integer, primary_key=True, autoincrement=True),
-    Column('slug', String(255), nullable=False, unique=True),
-    Column('name', String(500), unique=True),
-    Column('name_ws', String(500), unique=True),
-)
 
-_texts_categories = Table(
-    'texts_categories', metadata,
-    Column('id', Integer, primary_key=True, autoincrement=True),
-    Column('tid', Integer, ForeignKey('titles.id', onupdate='CASCADE', ondelete='CASCADE')),
-    Column('category_id', Integer, ForeignKey('texts_categories_names.id', onupdate='CASCADE', ondelete='CASCADE')),
-    Index('ix_texts_categories_890bc0857c960d5b', 'tid', 'category_id', unique=True)
-)
+Index('titles_author_id_slug_uindex', Titles.author_id, Titles.slug, unique=True)
 
-_images = Table(
-    'images', metadata,
-    Column('id', Integer, primary_key=True, autoincrement=True),
-    Column('tid', Integer, ForeignKey('titles.id', onupdate='CASCADE', ondelete='CASCADE'), nullable=False),
-    Column('urn', String(500), nullable=False),
-    Column('filename', String(500), nullable=False),
-    Column('name_ws', String(500)),
-    Index('images_tid_name_ws_uindex', 'tid', 'name_ws', unique=True)
-)
 
-_htmls = Table(
-    'htmls', metadata,
-    Column('id', Integer, primary_key=True, autoincrement=True),
-    Column('tid', Integer, ForeignKey('titles.id', onupdate='CASCADE', ondelete='CASCADE'), nullable=False, unique=True),
-    Column('html', LONGTEXT),
-    Column('wiki', LONGTEXT),
-)
+class Wiki(Base):
+    __tablename__ = 'wikified'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tid = Column(Integer, ForeignKey('titles.id', ondelete='CASCADE', onupdate='CASCADE'), unique=True, nullable=False)
+    text = Column(LONGTEXT)
+    desc = Column(Text)
 
-_desc = Table(
-    'desc_', metadata,
-    Column('id', Integer, primary_key=True, autoincrement=True),
-    Column('tid', Integer, ForeignKey('titles.id', onupdate='CASCADE', ondelete='CASCADE'), nullable=False,
-           unique=True),
-    Column('author', Text),
-    Column('translator', Text),
-    Column('year', Text),
-    Column('desc', Text),
-    Column('author_tag', Text),
-    Column('year_tag', Text),
-    Column('annotation_tag', Text),
-)
 
-_authors_categories = Table(
-    'authors_categories', metadata,
-    Column('id', Integer, primary_key=True, autoincrement=True),
-    Column('name_site', String(500), nullable=False, unique=True),
-    Column('name_ws', String(500)),
-    Column('text_cat_by_author', String(500)),
-    Column('text_lang_by_author', String(100)),
-)
+class WikisourceListpages(Base):
+    __tablename__ = 'wikisource_listpages'
+    __comment__ = '23.01.2022'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pagename = Column(String(400), nullable=False, unique=True)
+
+
+class TextsCategoriesNames(Base):
+    __tablename__ = 'texts_categories_names'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    slug = Column(String(255), nullable=False, unique=True)
+    name = Column(String(500), unique=True)
+    name_ws = Column(String(500), unique=True)
+
+
+class TextsCategories(Base):
+    __tablename__ = 'texts_categories'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tid = Column(Integer, ForeignKey('titles.id', onupdate='CASCADE', ondelete='CASCADE'))
+    category_id = Column(Integer,
+                         ForeignKey('texts_categories_names.id', onupdate='CASCADE', ondelete='CASCADE'))
+
+
+Index('ix_texts_categories_890bc0857c960d5b', TextsCategories.tid, TextsCategories.category_id, unique=True)
+
+
+class Images(Base):
+    __tablename__ = 'images'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tid = Column(Integer, ForeignKey('titles.id', onupdate='CASCADE', ondelete='CASCADE'), nullable=False)
+    urn = Column(String(500), nullable=False)
+    filename = Column(String(500), nullable=False)
+    name_ws = Column(String(500))
+
+
+Index('images_tid_name_ws_uindex', Images.tid, Images.name_ws, unique=True)
+
+
+class Htmls(Base):
+    __tablename__ = 'htmls'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tid = Column(Integer, ForeignKey('titles.id', onupdate='CASCADE', ondelete='CASCADE'), nullable=False, unique=True)
+    html = Column(LONGTEXT)
+    wiki = Column(LONGTEXT)
+
+
+class Desc(Base):
+    __tablename__ = 'desc_'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tid = Column(Integer, ForeignKey('titles.id', onupdate='CASCADE', ondelete='CASCADE'), nullable=False, unique=True)
+    author = Column(Text)
+    translator = Column(Text)
+    year = Column(Text)
+    desc = Column(Text)
+    author_tag = Column(Text)
+    year_tag = Column(Text)
+    annotation_tag = Column(Text)
+
+
+class AuthorsCategories(Base):
+    __tablename__ = 'authors_categories'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name_site = Column(String(500), nullable=False, unique=True)
+    name_ws = Column(String(500))
+    text_cat_by_author = Column(String(500))
+    text_lang_by_author = Column(String(100))
+
 
 # all_tables = Table(
 #     'all_tables', metadata,
-#     Column('id', Integer, primary_key=True, autoincrement=True),
-#     Column('name_site', String(500), nullable=False, unique=True),
-#     Column('name_ws', String(500)),
-#     Column('text_cat_by_author', String(500)),
-#     Column('text_lang_by_author', String(100)),
+#     id = Column( Integer, primary_key=True, autoincrement=True),
+#     name_site = Column( String(500), nullable=False, unique=True),
+#     name_ws = Column( String(500)),
+#     text_cat_by_author = Column( String(500)),
+#     text_lang_by_author = Column( String(100)),
 # )
 
 
@@ -215,5 +224,5 @@ htmls = db.create_table('htmls')
 desc = db.create_table('desc_')
 wiki = db.create_table('wikified')
 images = db.create_table('images')
-wikisource_listpages = db.create_table('wikisource_listpages')
+wikisource_listpages = db.create_table('ws_listpages_20220321')
 all_tables = db['all_tables']

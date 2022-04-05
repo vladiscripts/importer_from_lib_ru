@@ -32,7 +32,7 @@ class CategoriesbyAuthors(BaseModel):
 class X(D):
     wikified: str
     oo: bool
-    title_ws: str
+    title_ws_proposed: str
     author_tag: Optional[str]
     lang: Optional[str]
     year_dead: Optional[int]
@@ -50,7 +50,6 @@ class X(D):
         self.clean_desc()
         self.set_dates_published()
         self.text_replaces()
-        self.make_wikititle()
         self.categorization(CommonData)
         self.fill_wikipage_template()
 
@@ -80,10 +79,6 @@ class X(D):
                     a_new = m.group(2)
                 v = v.replace(a, a_new)
         self.desc = v
-
-    def make_wikititle(self):
-        if self.oo and self.title_ws:
-            self.title_ws += '/ДО'
 
     def categorization(self, C):
         re_headers_check = re.compile(r'<center>(Глава.+?|II.?|\d+.?)</center>', flags=re.I)
@@ -116,7 +111,7 @@ class X(D):
                 ('<a ' in self.desc, 'Тег a в параметре ДРУГОЕ'),
                 (self.size and self.size > 500, 'Длина текста более 500 Кб'),
                 (self.size and self.size > 1000, 'Длина текста более 1000 Кб'),
-                (self.is_same_title_in_ws_already, 'Есть одноимённая страница, проверить на дубль'),
+                (self.is_already_this_title_in_ws, 'Есть одноимённая страница, проверить на дубль'),
             ]
 
         cats = [name for cond, name in conditions if cond]
@@ -132,7 +127,7 @@ class X(D):
                 if author_.group(1) not in (self.litarea, self.name):  # todo: name or self.name_WS?
                     cats.append('Возможна ошибка указания автора')
 
-        if '/Версия ' in self.title_ws:
+        if '/Версия ' in self.title_ws_proposed:
             cats.append('Есть одноимённая страница не имевшаяся ранее, проверить на дубль и переименовать')
 
         cats = [f'Импорт/lib.ru/{c}' for c in cats]
@@ -212,7 +207,6 @@ def make_wikipage(r) -> str:
     d.clean_desc()
     d.set_dates_published()
     d.text_replaces()
-    d.make_wikititle()
     d.categorization(CommonData)
     wikipage = fill_wikipage(d)
     return wikipage
