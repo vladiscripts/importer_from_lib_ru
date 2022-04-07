@@ -255,20 +255,14 @@ class AsyncWorker:
     i_core: int
 
     def start(self):
-        self.offset = self.limit * self.i_core  # стартовые значения offset для запроса из БД
+        # self.offset = self.limit * self.i_core  # стартовые значения offset для запроса из БД
         loop = asyncio.get_event_loop()
-        loop.run_until_complete(self.asynchronous(loop))
+        rows = await self.feeder()
+        tasks = [self.work_row(r) for r in rows]
+        finished, unfinished = loop.run_until_complete(asyncio.gather(*tasks))
+        if len(unfinished):
+            logging.error('have unfinished async tasks')
         loop.close()
-
-    async def asynchronous(self, loop):
-        while True:
-            rows = await self.feeder()
-            if not rows:
-                break
-            tasks = [asyncio.create_task(self.work_row(r)) for r in rows]
-            finished, unfinished = await asyncio.wait(tasks)
-            if len(unfinished):
-                logging.error('have unfinished async tasks')
 
     async def process_images(self, h) -> H:
         return process_images(h)
