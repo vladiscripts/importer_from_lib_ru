@@ -19,6 +19,7 @@ from sqlalchemy_utils.functions import database_exists, create_database
 import dataset
 from dataset.types import Types as T
 import threading, queue
+from concurrent.futures import ThreadPoolExecutor
 import json
 from datetime import datetime, timedelta, date
 import time
@@ -87,6 +88,7 @@ class Scraper(SelenuimSession):
         text_new = self.s.driver.execute_script("return window.Wikify(arguments[0]);", text)
         return text_new
 
+
 @dataclass
 class D:
     tid: int
@@ -110,7 +112,7 @@ def wikify_all_into_db():
 
 def main():
     lock = threading.RLock()
-    q = queue.Queue(maxsize=20)  # fifo_queue
+    q = queue.Queue(maxsize=2)  # fifo_queue
     db_q = queue.Queue(maxsize=5)
 
     def feeder():
@@ -120,7 +122,7 @@ def main():
         tw = db.wiki.table
         td = db.desc.table
 
-        chunk = 1000  # rows
+        chunk = 100   # q.maxsize
         offset = 0
         while True:
             stm = f"SELECT {tt.name}.id as tid,wiki2 as wiki,{td.name}.desc as text_desc " \
@@ -130,39 +132,44 @@ def main():
                   f'LEFT JOIN {td.name} ON {tt.c.id}={td.c.tid} ' \
                   f'WHERE ' \
                   f'{th.c.wiki2} IS NOT NULL ' \
-                  f'AND {tw.c.text} IS NULL ' \
+                  f'AND {th.c.tid} = 87608 ' \
                   f'LIMIT {chunk} OFFSET {offset};'  # f'AND {tw.c.text} IS NULL ' \
             # f'{tt.c.do_upload} IS TRUE ' \ f'AND ' \
-            # f'LIMIT {q.maxsize} OFFSET {offset};'
+            # f'LIMIT {chunk} OFFSET {offset};'
             # f'LIMIT 1000;'
             res = db.db.query(stm)
             # resultsproxy = t.find(ta.table.c.wiki.is_not(None), ta.table.c.wikified.is_(None), do_upload=1, _limit=q.maxsize, _offset=offset)
-            if res.result_proxy.rowcount == 0:
+            # res = db.htmls.find(tid = 87608)
+            for r in res:
+                # while q.full():
+                #     time.sleep(0.5)
+                q.put(r)
+            if res.result_proxy.rowcount == 0 or res.result_proxy.rowcount < chunk:
                 if offset == 0:
                     break
                 else:
                     offset = 0
                     continue
-            offset += chunk  # q.maxsize
-            for r in res:
-                q.put(r)
+            offset += chunk
+
+        q.join()
 
     def worker():
         try:
             scraper = Scraper()
             while True:
                 # print(f'{q.unfinished_tasks=}')
-                while q.empty():
-                    # print(f'q.empty sleep')
-                    time.sleep(0.2)
+                # while q.empty():
+                #     # print(f'q.empty sleep')
+                #     time.sleep(0.2)
                 r = q.get()
-                print(r['tid'], end=' ')
+                print(r['tid'])
                 d = D(tid=r['tid'],
                       text=scraper.wikify(r['wiki']),
                       desc=scraper.wikify(r['text_desc']) if r['text_desc'] else '')
-                if d.text:
-                    while db_q.full():
-                        time.sleep(0.2)
+                # if d.text:
+                #     while db_q.full():
+                #         time.sleep(0.2)
                 db_q.put(d)
 
                 q.task_done()
@@ -174,9 +181,9 @@ def main():
 
     def db_save():
         while True:
-            while db_q.empty():
-                # print(f'db_q.empty sleep')
-                time.sleep(0.2)
+            # while db_q.empty():
+            #     # print(f'db_q.empty sleep')
+            #     time.sleep(0.2)
             # print(f'{db_q.unfinished_tasks=}')
             d = db_q.get()
             print('updated', d.tid)
@@ -189,24 +196,43 @@ def main():
             except:
                 print(d.tid, 'rollback')
                 db.db.rollback()
-
             db_q.task_done()
 
+        db_q.join()
+
     print('find db for rows to work, initial threads')
-    threading.Thread(target=db_save, name='db_save', daemon=True).start()
-    for r in range(q.maxsize):
-        threading.Thread(target=worker, daemon=True).start()
-    # threading.Thread(target=db_fill_pool, name='db_fill_pool', daemon=True).start()
+    # threading.Thread(target=db_save, name='db_save', daemon=True).start()
+    # for r in range(q.maxsize):
+    #     threading.Thread(target=worker, daemon=True).start()
+    # # threading.Thread(target=db_fill_pool, name='db_fill_pool', daemon=True).start()
+    #
+    # # t = db.all_tables
+    # # cols = t.table.c
 
-    # t = db.all_tables
-    # cols = t.table.c
+    # feeder()
 
-    feeder()
+    # # block until all tasks are done
+    # q.join()
+    # db_q.join()
+    # print('All work completed')
 
-    # block until all tasks are done
-    q.join()
-    db_q.join()
-    print('All work completed')
+
+    with ThreadPoolExecutor(q.maxsize) as exec, \
+            ThreadPoolExecutor(thread_name_prefix='db_save') as exec_db_save, \
+            ThreadPoolExecutor(thread_name_prefix='feeder') as exec_feeder:
+        futures = [exec.submit(worker) for i in range(q.maxsize)]
+        futures += [
+            exec_feeder.submit(feeder),
+            exec_db_save.submit(db_save)
+        ]
+        # results_db_save = exec_feeder.submit(feeder())
+        # results_db_save = exec_db_save.submit(db_save)
+        # results_workers = exec.submit(worker)
+        for future in concurrent.futures.as_completed(futures):
+            print(future.result())
+
+    # q.join()
+    # db_q.join()
 
 
 if __name__ == '__main__':
