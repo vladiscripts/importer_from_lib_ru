@@ -37,6 +37,7 @@ class H(BaseModel):
     soup: Optional[BeautifulSoup]
     wikicode: mwp.wikicode.Wikicode = None
     wiki: Optional[str] = Field(..., alias='wiki2')
+    wiki_new: Optional[str] = None
     images: List[Image] = []
 
     class Config:
@@ -247,9 +248,6 @@ count_pages_per_min = 0
 last_time = datetime.now()
 
 
-# processed = set()
-
-
 class AsyncWorker:
     offset = 0  # db_feel_pool    # q.maxsize
     limit = 100  # db_feel_pool
@@ -310,16 +308,11 @@ class AsyncWorker:
         h = H.parse_obj(r)
         h = await convert_page(h)
         h = await self.process_images(h)
-        h.wiki = strip_wikitext(str(h.wikicode))
+        h.wiki_new = strip_wikitext(str(h.wikicode))
         h.html = None
         h.wikicode = None
-        if h.wiki:
+        if h.wiki_new:
             print('converted, to db', h.tid)
-            # if h.tid in processed:
-            #     print('!!!! in processed already')
-            # else:
-            #     processed.add(h.tid)
-
             await self.db_save_pool(h)
         else:
             print('no wiki', h.tid)
