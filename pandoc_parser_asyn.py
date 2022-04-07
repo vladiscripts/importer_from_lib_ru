@@ -250,7 +250,7 @@ last_time = datetime.now()
 
 class AsyncWorker:
     offset = 0  # db_feel_pool    # q.maxsize
-    limit = 100  # db_feel_pool
+    chunk = 100  # db_feel_pool query rows limit
     # PAGES_PER_CORE :int
     i_core: int
 
@@ -282,17 +282,19 @@ class AsyncWorker:
             res = t.find(
                 cols.html.is_not(None),
                 # cols.wiki.is_(None),
-                cols.wiki2.is_(None),
-                # tid=88126, # wiki2={'like': '%[[File:%'},
-                _limit=self.limit, _offset=self.offset)
+                # cols.wiki2.is_(None),
+                wiki2_changed=0,
+                tid=87499,  # wiki2={'like': '%[[File:%'},
+                _limit=self.chunk, _offset=self.offset)
             # _limit=limit, _offset=offset)
-            if res.result_proxy.rowcount == 0:
+            if res.result_proxy.rowcount == 0 or res.result_proxy.rowcount < self.chunk:
                 if self.offset == 0:
                     break
                 else:
                     self.offset = 0
                     continue
-            self.offset += (self.limit * (self.i_core + 1))
+            # self.offset += self.chunk
+            self.offset += (self.chunk * (self.i_core + 1))
             rows = [r for r in res]
             return rows
 
@@ -302,7 +304,8 @@ class AsyncWorker:
             tx1['images'].delete(tid=h.tid)
             for row in rows:
                 tx1['images'].insert_ignore(row, ['tid', 'name_ws'])
-            tx1['htmls'].update({'tid': h.tid, 'wiki2': h.wiki}, ['tid'])
+            if h.wiki_new != h.wiki:
+                tx1['htmls'].update({'tid': h.tid, 'wiki2': h.wiki_new, 'wiki2_changed': 1}, ['tid'])
 
     async def work_row(self, r):
         h = H.parse_obj(r)
