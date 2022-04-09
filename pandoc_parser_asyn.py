@@ -5,8 +5,10 @@ from math import floor
 import re
 import threading, queue
 import asyncio
-import concurrent.futures  # Позволяет создать новый процесс
-from multiprocessing import cpu_count  # Вернет количество ядер процессора
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+import concurrent.futures
+from multiprocessing import cpu_count, Queue  # Вернет количество ядер процессора
+import multiprocessing
 import socket
 import sqlalchemy.exc
 from pathlib import Path
@@ -36,7 +38,8 @@ class H(BaseModel):
     html: str
     soup: Optional[BeautifulSoup]
     wikicode: mwp.wikicode.Wikicode = None
-    wiki: Optional[str] = Field(..., alias='wiki2')
+    wiki: Optional[str] = None
+    wiki2: Optional[str] = None
     wiki_new: Optional[str] = None
     images: List[Image] = []
 
@@ -160,7 +163,7 @@ async def convert_page(h: H):
     html = re.sub(r'<(p|dd)( [^>]+)?>[^\S\r\n]+', r'<\1\2>', html, flags=re.DOTALL)  # убрать пробелы после <p>, <dd>
 
     text = await pypandoc_converor(html)
-    text = html_.unescape(text.strip('/'))
+    text = html_.unescape(html_.unescape(text.strip('/')))  # бывают вложенные сущности, вроде 'бес&amp;#1123;дку
 
     # out2 = re.sub('<span id="[^"]+"></span>', '', out2)
 
@@ -185,6 +188,14 @@ async def convert_page(h: H):
     text = re.sub(r'([Α-Ω]+)', r'{{lang|grc|\1}}', text, flags=re.I)
 
     text = re.sub(r'(\n==+[^=]+?<br[/ ]*>)\n+', r'\1', text)  # fix: \n после <br> в заголовках
+
+    text = re.sub(r"([^'])''''([^'])", r'\1\2', text)  # вики-курсив нулевой длинны
+
+    text = re.sub(r"([а-яa-z])", r'\1' + '\u0301', text, flags=re.I)  # ударение
+    text = re.sub(r'(&#|#)?1122;', 'Ѣ', text)  # яти, с поврежденными кодами
+    text = re.sub(r'(&#|#)?1123;', 'ѣ', text)
+    text = re.sub(r'([а-я])122;', r'\1Ѣ', text, flags=re.I)
+    text = re.sub(r'([а-я])123;', r'\1ѣ', text, flags=re.I)
 
     wc = mwp.parse(text)
 
@@ -249,20 +260,33 @@ last_time = datetime.now()
 
 
 class AsyncWorker:
-    offset = 0  # db_feel_pool    # q.maxsize
-    chunk = 100  # db_feel_pool query rows limit
+    # offset = 0  # db_feel_pool    # q.maxsize
+    chunk = 1000  # db_feel_pool query rows limit
+
+    # chunk = 100  # db_feel_pool query rows limit
     # PAGES_PER_CORE :int
-    i_core: int
+    # i_core: int
+
+    def __init__(self, i_core, offset):
+        self.i_core = i_core
+        self.offset = offset
+        # self.offset = self.chunk * i_core  # стартовые значения offset для запроса из БД
 
     def start(self):
-        # self.offset = self.limit * self.i_core  # стартовые значения offset для запроса из БД
         loop = asyncio.get_event_loop()
-        rows = await self.feeder()
-        tasks = [self.work_row(r) for r in rows]
-        finished, unfinished = loop.run_until_complete(asyncio.gather(*tasks))
+        finished, unfinished = loop.run_until_complete(self.asynchronous(loop))
         if len(unfinished):
             logging.error('have unfinished async tasks')
         loop.close()
+
+    async def asynchronous(self, loop):
+        while True:
+            rows = await self.feeder()
+            if not rows:
+                break
+            tasks = [self.work_row(r) for r in rows]
+            await asyncio.gather(*tasks)
+            # await asyncio.gather(*tasks)
 
     async def process_images(self, h) -> H:
         return process_images(h)
@@ -271,35 +295,47 @@ class AsyncWorker:
         # t = db.all_tables
         t = db.htmls
         cols = t.table.c
-
+        # self.offset = self.chunk * self.i_core
+        offset = self.i_core * self.chunk
+        is_refetched = False
         while True:
             res = t.find(
                 cols.html.is_not(None),
                 # cols.wiki.is_(None),
                 # cols.wiki2.is_(None),
-                wiki2_changed=0,
-                tid=87499,  # wiki2={'like': '%[[File:%'},
-                _limit=self.chunk, _offset=self.offset)
+                # wiki2_converted=0,
+                # tid=88144,
+                # tid=87499,
+                html={'like': '%%'},  # wiki2={'like': '%[[File:%'},
+                _limit=self.chunk, _offset=offset)
             # _limit=limit, _offset=offset)
             if res.result_proxy.rowcount == 0 or res.result_proxy.rowcount < self.chunk:
-                if self.offset == 0:
+                if offset == 0 or is_refetched:
                     break
                 else:
-                    self.offset = 0
+                    if res.result_proxy.rowcount < self.chunk:
+                        is_refetched = True
+                    offset = 0
                     continue
-            # self.offset += self.chunk
-            self.offset += (self.chunk * (self.i_core + 1))
-            rows = [r for r in res]
-            return rows
+            break
+        # self.offset += self.chunk
+        # self.offset += (self.chunk * (self.i_core + 1))
+        self.offset += 1000
+        rows = [r for r in res]
+        return rows
 
-    async def db_save_pool(self, h) -> None:
+    async def db_save(self, h) -> None:
         rows = [img.dict() for img in h.images]
         with db.db as tx1:
             tx1['images'].delete(tid=h.tid)
             for row in rows:
                 tx1['images'].insert_ignore(row, ['tid', 'name_ws'])
-            if h.wiki_new != h.wiki:
-                tx1['htmls'].update({'tid': h.tid, 'wiki2': h.wiki_new, 'wiki2_changed': 1}, ['tid'])
+            # tx1['images'].insert_many([row for row in rows], ['tid', 'name_ws'])
+            r = {'tid': h.tid, 'wiki': h.wiki_new, 'wiki2_converted': 1}
+            if h.wiki_new != h.wiki2:
+                r.update({'wiki_differ_wiki2': 1})
+            tx1['htmls'].update(r, ['tid'])
+
 
     async def work_row(self, r):
         h = H.parse_obj(r)
@@ -310,25 +346,24 @@ class AsyncWorker:
         h.wikicode = None
         if h.wiki_new:
             print('converted, to db', h.tid)
-            await self.db_save_pool(h)
+            await self.db_save(h)
         else:
             print('no wiki', h.tid)
 
 
-def start(i_core: int):
-    w = AsyncWorker()
+def start(i_core: int, offset):
+    w = AsyncWorker(i_core, offset)
     # w.PAGES_PER_CORE = num_pages
-    w.i_core = i_core
     w.start()
 
 
 def main():
     # NUM_PAGES = 100  # Суммарное количество страниц для скрапинга
-    NUM_CORES = 10  # cpu_count() - 1  # Количество ядер CPU (влкючая логические)
+    NUM_CORES = 1  # cpu_count() - 1  # Количество ядер CPU (влкючая логические)
     # PAGES_PER_CORE = floor(NUM_PAGES / NUM_CORES)
 
     with concurrent.futures.ProcessPoolExecutor(max_workers=NUM_CORES) as executor:
-        futures = [executor.submit(start, i_core=i) for i in range(NUM_CORES)]
+        futures = [executor.submit(start, i_core=i, offset=i * 5000) for i in range(NUM_CORES)]
         ok = concurrent.futures.wait(futures)
 
         for future in ok.done:

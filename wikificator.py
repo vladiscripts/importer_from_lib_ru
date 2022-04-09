@@ -1,21 +1,9 @@
-# from typing import Union, List
-# import re
-#
-# re_spaces = re.compile(r'\s*')
-#
-#
-# def wikify(text: str):
-#     text = text.replace('&#1122;', 'Ѣ').replace('&#1123;', 'ѣ').replace('&amp;#1122;', 'Ѣ').replace('&amp;#1123;', 'ѣ')
-#
-#     text = re.sub(r'^(--|-)\s*(?!\w)', '— ', text)
-#     return text
-
-
 # !/usr/bin/env python3
 from selenium import webdriver
 import requestium
 import chromedriver_binary  # Adds chromedriver binary to path
 from sqlalchemy_utils.functions import database_exists, create_database
+from sqlalchemy.orm import sessionmaker, relationship, scoped_session, Query
 import dataset
 from dataset.types import Types as T
 import threading, queue
@@ -122,37 +110,38 @@ def main():
         tw = db.wiki.table
         td = db.desc.table
 
-        chunk = 100   # q.maxsize
+        chunk = 100  # q.maxsize
         offset = 0
+        is_refetched = False
         while True:
-            stm = f"SELECT {tt.name}.id as tid,wiki2 as wiki,{td.name}.desc as text_desc " \
-                  f'FROM {tt.name} ' \
-                  f'LEFT JOIN {th.name} ON {tt.c.id}={th.c.tid} ' \
-                  f'LEFT JOIN {tw.name} ON {tt.c.id}={tw.c.tid} ' \
-                  f'LEFT JOIN {td.name} ON {tt.c.id}={td.c.tid} ' \
-                  f'WHERE ' \
-                  f'{th.c.wiki2} IS NOT NULL ' \
-                  f'AND {th.c.tid} = 87608 ' \
-                  f'LIMIT {chunk} OFFSET {offset};'  # f'AND {tw.c.text} IS NULL ' \
-            # f'{tt.c.do_upload} IS TRUE ' \ f'AND ' \
-            # f'LIMIT {chunk} OFFSET {offset};'
-            # f'LIMIT 1000;'
-            res = db.db.query(stm)
-            # resultsproxy = t.find(ta.table.c.wiki.is_not(None), ta.table.c.wikified.is_(None), do_upload=1, _limit=q.maxsize, _offset=offset)
-            # res = db.htmls.find(tid = 87608)
+            stmt = db.db_.s.query(
+                db.Titles.id.label('tid'),
+                db.Htmls.wiki,
+                db.Desc.desc.label('text_desc')
+            ).outerjoin(db.Htmls).outerjoin(db.Wiki).outerjoin(db.Desc).filter(
+                db.Htmls.wiki.is_not(None),
+                # db.Wiki.text.is_(None),
+                # db.Htmls.tid ==  87608,
+                # db.Titles.do_upload == True,
+                db.Htmls.wiki_differ_wiki2 == 1
+            ).limit(chunk).offset(offset)
+            res = stmt.all()
             for r in res:
                 # while q.full():
                 #     time.sleep(0.5)
-                q.put(r)
-            if res.result_proxy.rowcount == 0 or res.result_proxy.rowcount < chunk:
-                if offset == 0:
+                q.put(dict(r))
+            # if res.result_proxy.rowcount == 0 or res.result_proxy.rowcount < chunk:
+            if len(res) == 0 or len(res) < chunk:
+                if offset == 0 or is_refetched:
                     break
                 else:
+                    if len(res) < self.chunk:
+                        is_refetched = True
                     offset = 0
                     continue
             offset += chunk
 
-        q.join()
+        # q.join()
 
     def worker():
         try:
@@ -215,7 +204,6 @@ def main():
     # q.join()
     # db_q.join()
     # print('All work completed')
-
 
     with ThreadPoolExecutor(q.maxsize) as exec, \
             ThreadPoolExecutor(thread_name_prefix='db_save') as exec_db_save, \

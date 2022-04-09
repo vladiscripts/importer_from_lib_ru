@@ -122,6 +122,9 @@ class Htmls(Base):
     tid = Column(Integer, ForeignKey('titles.id', onupdate='CASCADE', ondelete='CASCADE'), nullable=False, unique=True)
     html = Column(LONGTEXT)
     wiki = Column(LONGTEXT)
+    wiki2 = Column(LONGTEXT)
+    wiki2_converted = Column(Boolean, default=0, nullable=False)
+    wiki_differ_wiki2 = Column(Boolean, default=0, nullable=False)
 
 
 class Desc(Base):
