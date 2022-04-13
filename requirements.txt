@@ -6,6 +6,7 @@ bs4
 pymysql
 sqlalchemy
 sqlalchemy_utils
+pillow
 dataset
 mwparserfromhell
 pydantic
