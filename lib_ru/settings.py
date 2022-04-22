@@ -53,7 +53,7 @@ ROBOTSTXT_OBEY = False
 # Enable or disable spider middlewares
 # See http://scrapy.readthedocs.org/en/latest/topics/spider-middleware.html
 SPIDER_MIDDLEWARES = {
-   'lib_ru.middlewares.LibRuMiddleware': 543,
+   # 'lib_ru.middlewares.LibRuMiddleware': 543,
 }
 
 # Enable or disable downloader middlewares
@@ -76,8 +76,7 @@ IMAGES_EXPIRES = 30
 # Configure item pipelines
 # See http://scrapy.readthedocs.org/en/latest/topics/item-pipeline.html
 ITEM_PIPELINES = {
-    'lib_ru.pipelines.MyImagesPipeline': 1,
-    # 'lib_ru.pipelines.ImagesPipeline': 1,
+    'lib_ru.pipelines.TextsImagesPipeline': 300,
     'lib_ru.pipelines.LibRuPipeline': 300,
 }
 

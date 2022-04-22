@@ -85,80 +85,58 @@ class D:
     desc: Optional[str] = None
 
 
-def wikify_all_into_db():
-    # from wikificator import Scraper
-    scraper = Scraper()
-    ta = db.all_tables
-    for r in ta.find(ta.table.c.wiki2.isnot(None), do_upload=True):
-        tid = r['tid']
-        print(tid, end=' ')
-        text = scraper.wikify(r['wiki'])
-        desc = scraper.wikify(r['text_desc']) if r['text_desc'] else ''
-        db.wiki.update({'tid': tid, 'wikified': text, 'desc': desc}, ['tid'])
-        print('updated')
-
-
 def main():
-    lock = threading.RLock()
-    q = queue.Queue(maxsize=2)  # fifo_queue
+    # lock = threading.RLock()
+    q = queue.Queue(maxsize=50)  # fifo_queue
     db_q = queue.Queue(maxsize=5)
 
-    def feeder():
-        # ta = db.all_tables
-        tt = db.titles.table
-        th = db.htmls.table
-        tw = db.wiki.table
-        td = db.desc.table
+    def feeder_statement(chunk, offset):
+        stmt = db.db_.s.query(
+            db.Titles.id.label('tid'),
+            db.Htmls.wiki,
+            db.Desc.desc.label('text_desc')
+        ).outerjoin(db.Htmls).outerjoin(db.Wiki).outerjoin(db.Desc).filter(
+            # db.Wiki.text.is_(None),
+            # db.Htmls.tid ==  87608,
+            # db.Titles.do_upload == True,
+            db.Htmls.wiki_differ_wiki2 == 1,
+            db.Htmls.wiki2_converted == 0,
+            # db.Htmls.tid > 147000,
+            db.Htmls.wiki.is_not(None)
+        ).limit(chunk).offset(offset)
+        return stmt
 
-        chunk = 100  # q.maxsize
+    def feeder():
+        chunk_size = 100  # q.maxsize
         offset = 0
-        is_refetched = False
+        # is_refetched = False
         while True:
-            stmt = db.db_.s.query(
-                db.Titles.id.label('tid'),
-                db.Htmls.wiki,
-                db.Desc.desc.label('text_desc')
-            ).outerjoin(db.Htmls).outerjoin(db.Wiki).outerjoin(db.Desc).filter(
-                db.Htmls.wiki.is_not(None),
-                # db.Wiki.text.is_(None),
-                # db.Htmls.tid ==  87608,
-                # db.Titles.do_upload == True,
-                db.Htmls.wiki_differ_wiki2 == 1
-            ).limit(chunk).offset(offset)
+            stmt = feeder_statement(chunk_size, offset)
             res = stmt.all()
             for r in res:
-                # while q.full():
-                #     time.sleep(0.5)
                 q.put(dict(r))
-            # if res.result_proxy.rowcount == 0 or res.result_proxy.rowcount < chunk:
-            if len(res) == 0 or len(res) < chunk:
-                if offset == 0 or is_refetched:
-                    break
-                else:
-                    if len(res) < self.chunk:
-                        is_refetched = True
-                    offset = 0
-                    continue
-            offset += chunk
-
-        # q.join()
+            # if len(res) == 0 or len(res) < chunk:
+            #     if offset == 0 or is_refetched:
+            #         break
+            #     else:
+            #         if len(res) < self.chunk_size:
+            #             is_refetched = True
+            #         offset = 0
+            #         continue
+            # if res.result_proxy.rowcount < limit:
+            if len(res) < chunk_size:
+                break
+            offset += chunk_size
 
     def worker():
         try:
             scraper = Scraper()
             while True:
-                # print(f'{q.unfinished_tasks=}')
-                # while q.empty():
-                #     # print(f'q.empty sleep')
-                #     time.sleep(0.2)
                 r = q.get()
                 print(r['tid'])
                 d = D(tid=r['tid'],
                       text=scraper.wikify(r['wiki']),
                       desc=scraper.wikify(r['text_desc']) if r['text_desc'] else '')
-                # if d.text:
-                #     while db_q.full():
-                #         time.sleep(0.2)
                 db_q.put(d)
 
                 q.task_done()
@@ -170,17 +148,13 @@ def main():
 
     def db_save():
         while True:
-            # while db_q.empty():
-            #     # print(f'db_q.empty sleep')
-            #     time.sleep(0.2)
-            # print(f'{db_q.unfinished_tasks=}')
             d = db_q.get()
             print('updated', d.tid)
 
-            # with lock:
             db.db.begin()
             try:
                 db.wiki.upsert({'tid': d.tid, 'text': d.text, 'desc': d.desc}, ['tid'])
+                db.htmls.update({'tid': d.tid, 'wiki2_converted': 1}, ['tid'])
                 db.db.commit()
             except:
                 print(d.tid, 'rollback')

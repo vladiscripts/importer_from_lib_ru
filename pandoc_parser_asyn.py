@@ -190,6 +190,13 @@ async def convert_page(h: H):
     text = re.sub(r'(\n==+[^=]+?<br[/ ]*>)\n+', r'\1', text)  # fix: \n после <br> в заголовках
 
     text = re.sub(r"([^'])''''([^'])", r'\1\2', text)  # вики-курсив нулевой длинны
+    text = re.sub(r"([^'])''([-—.\" ]+)''([^'])", r'\1\2\3', text)  # излишний курсив вокруг пробелов и знак.преп.
+    text = re.sub(r"^(''+) +", r'\1', text, flags=re.MULTILINE)  # лишние пробелы в курсиве в начале строки
+    # todo: удаляет '' в начале строки, начиная строку с пробела, портя текст. 
+    # https://ru.wikisource.org/w/index.php?title=%D0%A2%D1%80%D0%B8_%D0%B3%D0%BB%D0%B0%D0%B2%D1%8B_%D0%B8%D0%B7_%D0%B8%D1%81%D1%82%D0%BE%D1%80%D0%B8%D1%87%D0%B5%D1%81%D0%BA%D0%BE%D0%B9_%D0%BF%D0%BE%D1%8D%D1%82%D0%B8%D0%BA%D0%B8_(%D0%92%D0%B5%D1%81%D0%B5%D0%BB%D0%BE%D0%B2%D1%81%D0%BA%D0%B8%D0%B9)&diff=prev&oldid=4298606
+    
+
+    text = re.sub("([^\n])({{right\|)\s*", r"\1\n\2", text, flags=re.DOTALL)
 
     text = re.sub(r"([а-яa-z])", r'\1' + '\u0301', text, flags=re.I)  # ударение
     text = re.sub(r'(&#|#)?1122;', 'Ѣ', text)  # яти, с поврежденными кодами
@@ -241,14 +248,16 @@ def process_images(h):
     """ to simple names of images """
     for f in h.wikicode.filter_wikilinks(matches=lambda x: x.title.lower().startswith('file')):
         link = re.sub(r'^[Ff]ile:', '', str(f.title))
+        if not link.startswith('/img/'):  # удалить ссылки на картинки которые не начинаются на '/img/
+            del(f)
+            continue
         p = Path(link)
         # f.title = re.sub(r'^.+?/(text_\d+_).*?/([^/]+)$', r'File:\1\2', str(f.title))
         # name_ws = re.search(r'^(text_\d+_).+', p.parts[-2]).group(1) + p.name
         try:
-            p.parts[-2]
+            name_ws = f'{p.parts[-3]}_{p.parts[-2]}_{p.name}'
         except IndexError as e:
             continue
-        name_ws = f'{p.parts[-2]}_{p.name}'
         f.title = 'File:' + name_ws
         img = Image(tid=h.tid, urn=link, filename=p.name, name_ws=name_ws)
         h.images.append(img)
@@ -257,70 +266,117 @@ def process_images(h):
 
 count_pages_per_min = 0
 last_time = datetime.now()
+PROCESSES = 10
 
 
 class AsyncWorker:
     # offset = 0  # db_feel_pool    # q.maxsize
-    chunk = 1000  # db_feel_pool query rows limit
+    chunk_size = 100  # db_feel_pool query rows limit
 
     # chunk = 100  # db_feel_pool query rows limit
     # PAGES_PER_CORE :int
     # i_core: int
 
-    def __init__(self, i_core, offset):
+    def __init__(self, i_core):
         self.i_core = i_core
-        self.offset = offset
-        # self.offset = self.chunk * i_core  # стартовые значения offset для запроса из БД
+        # self.offset_base = self.chunk_size * i_core  # стартовые значения offset для запроса из БД
+        # self.offset = 0
 
     def start(self):
         loop = asyncio.get_event_loop()
-        finished, unfinished = loop.run_until_complete(self.asynchronous(loop))
-        if len(unfinished):
-            logging.error('have unfinished async tasks')
+        loop.run_until_complete(self.do_tasks(loop))
+        # finished, unfinished = loop.run_until_complete(self.asynchronous(loop))
+        # if len(unfinished):
+        #     logging.error('have unfinished async tasks')
         loop.close()
 
-    async def asynchronous(self, loop):
+    async def do_tasks(self, loop):
+        loop = 0
         while True:
-            rows = await self.feeder()
+            offset = self.i_core * self.chunk_size + loop * 1000
+            rows = await self.feeder(offset)
+            loop += 1
             if not rows:
                 break
             tasks = [self.work_row(r) for r in rows]
             await asyncio.gather(*tasks)
-            # await asyncio.gather(*tasks)
 
     async def process_images(self, h) -> H:
         return process_images(h)
 
-    async def feeder(self) -> Optional[List[dict]]:
+    async def feeder(self, offset) -> Optional[List[dict]]:
+        # t = db.all_tables
+        t = db.htmls
+        cols = t.table.c
+        # for i in range(1, NUM_CORES + 1):
+        print(f'{offset=} {self.i_core=}')
+        res = t.find(
+            cols.html.is_not(None),
+            # cols.wiki.is_(None),
+            # cols.wiki2.is_(None),
+            wiki_differ_wiki2=1,
+            wiki2_converted=0,
+            # tid=88278,
+            # tid=87499,
+            # html={'like': '%%'},  # wiki2={'like': '%[[File:%'},
+            _limit=self.chunk_size, _offset=offset)
+        # _limit=limit, _offset=offset)
+        rows = [r for r in res]
+        return rows
+
+    async def _feeder(self, offset) -> Optional[List[dict]]:
         # t = db.all_tables
         t = db.htmls
         cols = t.table.c
         # self.offset = self.chunk * self.i_core
-        offset = self.i_core * self.chunk
+        # offset = self.i_core * self.chunk_size
+        # offset = 0
         is_refetched = False
+
+        # start, end = 0, self.chunk_size
+        # while start < len(z):
+        #     for i in range(1, treads + 1):
+        #         chunk = [r for r in data[start:end]]
+        #         # for r in res:
+        #         #     q.put(r)
+        #         print(chunk)
+        #         print(start, end)
+        #         start += self.chunk_size
+        #         end += self.chunk_size
+
+        # offset = self.chunk_size * self.i_core
+
         while True:
+            # for i in range(1, NUM_CORES + 1):
+            print(f'{offset=} {self.i_core=}')
             res = t.find(
                 cols.html.is_not(None),
                 # cols.wiki.is_(None),
                 # cols.wiki2.is_(None),
-                # wiki2_converted=0,
-                # tid=88144,
+                wiki2_converted=1,
+                # tid=88278,
                 # tid=87499,
-                html={'like': '%%'},  # wiki2={'like': '%[[File:%'},
-                _limit=self.chunk, _offset=offset)
+                # html={'like': '%%'},  # wiki2={'like': '%[[File:%'},
+                _limit=self.chunk_size, _offset=offset)
             # _limit=limit, _offset=offset)
-            if res.result_proxy.rowcount == 0 or res.result_proxy.rowcount < self.chunk:
+            if res.result_proxy.rowcount == 0 or res.result_proxy.rowcount < self.chunk_size:
                 if offset == 0 or is_refetched:
                     break
                 else:
-                    if res.result_proxy.rowcount < self.chunk:
+                    if res.result_proxy.rowcount < self.chunk_size:
                         is_refetched = True
                     offset = 0
                     continue
             break
-        # self.offset += self.chunk
+        # offset += self.chunk_size * self.i_core # self.offset_base
+
+        # проблема в том, что нельзя сохранить плавающее значение offset для разных процессов.
+        # даже если обозначить вверху скрипта, это будет считаться главным процессом.
+        # в каждом процесс оно будет повторятся, и поэтому из базы данных запрашиваться одно и тоже, работа дублируется
+        # таже проблема с очередями
+
         # self.offset += (self.chunk * (self.i_core + 1))
-        self.offset += 1000
+        # self.offset += 1000
         rows = [r for r in res]
         return rows
 
@@ -329,13 +385,12 @@ class AsyncWorker:
         with db.db as tx1:
             tx1['images'].delete(tid=h.tid)
             for row in rows:
-                tx1['images'].insert_ignore(row, ['tid', 'name_ws'])
+                tx1['images'].insert_ignore(row, ['urn'])
             # tx1['images'].insert_many([row for row in rows], ['tid', 'name_ws'])
             r = {'tid': h.tid, 'wiki': h.wiki_new, 'wiki2_converted': 1}
-            if h.wiki_new != h.wiki2:
-                r.update({'wiki_differ_wiki2': 1})
+            # if h.wiki_new != h.wiki2:
+            #     r.update({'wiki_differ_wiki2': 1})
             tx1['htmls'].update(r, ['tid'])
-
 
     async def work_row(self, r):
         h = H.parse_obj(r)
@@ -351,19 +406,19 @@ class AsyncWorker:
             print('no wiki', h.tid)
 
 
-def start(i_core: int, offset):
-    w = AsyncWorker(i_core, offset)
+def start(i_core: int):
+    w = AsyncWorker(i_core)
     # w.PAGES_PER_CORE = num_pages
     w.start()
 
 
 def main():
     # NUM_PAGES = 100  # Суммарное количество страниц для скрапинга
-    NUM_CORES = 1  # cpu_count() - 1  # Количество ядер CPU (влкючая логические)
+    # PROCESSES = 10  # cpu_count() - 1  # Количество ядер CPU (влкючая логические)
     # PAGES_PER_CORE = floor(NUM_PAGES / NUM_CORES)
 
-    with concurrent.futures.ProcessPoolExecutor(max_workers=NUM_CORES) as executor:
-        futures = [executor.submit(start, i_core=i, offset=i * 5000) for i in range(NUM_CORES)]
+    with concurrent.futures.ProcessPoolExecutor(max_workers=PROCESSES) as executor:
+        futures = [executor.submit(start, i_core=i) for i in range(PROCESSES)]
         ok = concurrent.futures.wait(futures)
 
         for future in ok.done:

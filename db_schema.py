@@ -18,11 +18,26 @@ from sqlalchemy_utils.functions import database_exists, create_database
 
 from db_connector import *
 
+# naming_convention = {
+#     "ix": "ix_%(column_0_label)s",
+#     "uq": "uq_%(table_name)s_%(column_0_name)s",
+#     "ck": "ck_%(table_name)s_%(constraint_name)s",
+#     "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+#     "pk": "pk_%(table_name)s"
+# }
+naming_convention = {
+    "ix": "%(table_name)s_%(column_0_label)s_index",
+    "uq": "%(table_name)s_%(column_0_name)s_uindex",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "%(column_0_name)s_%(referred_table_name)s_fk",
+    "pk": "%(table_name)s_pk"
+}
+
 db_name = 'lib_ru'
 db_ = DB(db_name, use_os_env=True, use_orm=False)
 
-# metadata = MetaData(bind=db_.engine)
-Base = declarative_base(bind=db_.engine)
+metadata = MetaData(bind=db_.engine, naming_convention=naming_convention)
+Base = declarative_base(metadata=metadata)
 
 
 class Authors(Base):
@@ -35,36 +50,40 @@ class Authors(Base):
     live_time = Column(String(255))
     town = Column(Text)
     litarea = Column(String(255))
-    image_url_filename = Column(String(255))
     desc = Column(Text)
-    name_WS = Column(String(1000))
-    image_filename_wiki = Column(Text)
-    image_urls = Column(Text)
-    images = Column(Text)
-    filename = Column(Text)
+    name_WS = Column(String(255))
+    year_dead = Column(Integer)
     is_author = Column(Boolean, default=1, nullable=False)
+    do_upload = Column(Boolean, default=1, nullable=False)
     uploaded = Column(Boolean, default=0, nullable=False)
     image_url = Column(Text)
-    year_dead = Column(Integer)
+    image_url_filename = Column(String(255))
+    image_filename_wiki = Column(Text)
+    filename = Column(Text)
 
 
 class Titles(Base):
     __tablename__ = 'titles'
     id = Column(Integer, primary_key=True, autoincrement=True)
     slug = Column(String(255), nullable=False)
-    author_id = Column(Integer, ForeignKey('authors.id', ondelete='CASCADE', onupdate='CASCADE'), nullable=False)
+    author_id = Column(Integer, ForeignKey('authors.id', ondelete='CASCADE', onupdate='CASCADE'),
+                       nullable=False, index=True)
     year = Column(Integer)
     size = Column(Integer)
     title = Column(Text)
     desc = Column(Text)
     oo = Column(Boolean, default=0)
     is_already_this_title_in_ws = Column(Boolean, default=0)
-    do_upload = Column(Boolean, default=0, nullable=False)
-    uploaded = Column(Boolean, default=0, nullable=False)
-    do_update_as_named_proposed = Column(Boolean, default=0, nullable=False)
-    updated_as_named_proposed = Column(Boolean, default=0, nullable=False)
+    do_upload = Column(Boolean, default=0, nullable=False, index=True)
+    uploaded = Column(Boolean, default=0, nullable=False, index=True)
+    do_update_as_named_proposed = Column(Boolean, default=0, nullable=False, index=True)
+    updated_as_named_proposed = Column(Boolean, default=0, nullable=False, index=True)
+    created_before_0326 = Column(Boolean, index=True)
+    mybot_creater = Column(Boolean, index=True)
     text_url = Column(Text)
-    title_ws_proposed = Column(String(500), unique=True)
+    title_ws_proposed = Column(String(255), unique=True)
+    title_ws_as_uploaded = Column(String(255), unique=True)
+    text_length = Column(Integer)
 
 
 Index('titles_author_id_slug_uindex', Titles.author_id, Titles.slug, unique=True)
@@ -76,10 +95,11 @@ class Wiki(Base):
     tid = Column(Integer, ForeignKey('titles.id', ondelete='CASCADE', onupdate='CASCADE'), unique=True, nullable=False)
     text = Column(LONGTEXT)
     desc = Column(Text)
+    text_len = Column(Integer)
 
 
 class WikisourceListpages(Base):
-    __tablename__ = 'wikisource_listpages'
+    __tablename__ = 'ws_listpages_20220321'
     __comment__ = '23.01.2022'
     id = Column(Integer, primary_key=True, autoincrement=True)
     pagename = Column(String(400), nullable=False, unique=True)
@@ -90,7 +110,7 @@ class TextsCategoriesNames(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     slug = Column(String(255), nullable=False, unique=True)
     name = Column(String(500), unique=True)
-    name_ws = Column(String(500), unique=True)
+    name_ws = Column(String(255), unique=True)
 
 
 class TextsCategories(Base):
@@ -108,9 +128,12 @@ class Images(Base):
     __tablename__ = 'images'
     id = Column(Integer, primary_key=True, autoincrement=True)
     tid = Column(Integer, ForeignKey('titles.id', onupdate='CASCADE', ondelete='CASCADE'), nullable=False)
-    urn = Column(String(500), nullable=False)
+    urn = Column(String(500), nullable=False, unique=True)
     filename = Column(String(500), nullable=False)
-    name_ws = Column(String(500))
+    name_ws = Column(String(255), unique=True)
+    downloaded = Column(Boolean, default=0, nullable=False)
+    do_upload = Column(Boolean, default=1, nullable=False)
+    uploaded = Column(Boolean, default=0, nullable=False)
 
 
 Index('images_tid_name_ws_uindex', Images.tid, Images.name_ws, unique=True)
@@ -147,6 +170,12 @@ class AuthorsCategories(Base):
     name_ws = Column(String(500))
     text_cat_by_author = Column(String(500))
     text_lang_by_author = Column(String(100))
+
+
+class WSpages_w_tpl_uploaded(Base):
+    __tablename__ = 'ws_pages_w_tpl_uploaded'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pagename = Column(String(400), nullable=False, unique=True)
 
 
 # all_tables = Table(

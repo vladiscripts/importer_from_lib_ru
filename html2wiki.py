@@ -82,7 +82,7 @@ class LibRu(HtmltoWikiBase):
                     e.extract()
                 elif e.text.strip() == '' or link.rstrip('/') == e.text.strip().rstrip('/'):
                     e.unwrap()
-                elif link == e.text or 'smalt.karelia.ru' in link:
+                elif link == e.text or 'smalt.karelia.ru' in link or '.da.ru' in link:
                     e.unwrap()
                 elif link.startswith('file:'):
                     e.unwrap()

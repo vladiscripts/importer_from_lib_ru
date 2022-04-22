@@ -19,7 +19,7 @@ from urllib.parse import urlparse, urljoin
 from pathlib import Path
 # from mapping_fields import mapper, d, gender_id_map
 
-import db
+import db_schema as db
 from ..items import Image as Item
 
 

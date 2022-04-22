@@ -191,11 +191,18 @@ class Text(Item):
 
 class Image(Item):
     id = Field()  # author_id
-    image_filename_wiki = Field()
-    image_urls = Field()
-    images = Field()
-    image_url_filename = Field()
-    slug = Field()
     author_name = Field()
+    slug = Field()
+    image_urls = Field()
+    image_filename_wiki = Field()
+    image_url_filename = Field()
+    filename = Field()
+
+
+class ImageText(Item):
+    id = Field()
+    tid = Field()
+    # image_urls = Field()
+    image_url = Field()
     filename = Field()
 
