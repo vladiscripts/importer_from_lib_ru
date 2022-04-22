@@ -80,6 +80,7 @@ class Titles(Base):
     updated_as_named_proposed = Column(Boolean, default=0, nullable=False, index=True)
     created_before_0326 = Column(Boolean, index=True)
     mybot_creater = Column(Boolean, index=True)
+    img_renamed = Column(Boolean)
     text_url = Column(Text)
     title_ws_proposed = Column(String(255), unique=True)
     title_ws_as_uploaded = Column(String(255), unique=True)
