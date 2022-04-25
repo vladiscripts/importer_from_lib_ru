@@ -9,13 +9,12 @@ import db_schema as db
 
 path_to_images = '/home/vladislav/workspace/4wiki/lib_ru/images_texts/'
 
-
 def run(filename, desc):
     print(filename)
     # command = 'python /home/vladislav/usr/pwb/core/pwb.py upload -family:wikisource -lang:ru -keep -recursive -noverify -async -abortonwarn ' \
     #           f'-summary:"+" "{path_to_images}{filename}" "{desc}"'
     # '-descfile:"/home/vladislav/workspace/4wiki/lib_ru/desc_ws_upload_for_text_images.wiki" ' \
-    cmd_list = ['python', '/home/vladislav/usr/pwb/core/pwb.py', 'upload', '-family:wikisource', '-lang:ru',
+    cmd_list = ['python3', '/home/vladislav/usr/pwb/core/pwb.py', 'upload', '-family:wikisource', '-lang:ru',
                 '-keep', '-recursive', '-noverify', '-async', 
                 '-ignorewarn', '-always',
                 #  '-abortonwarn', 
@@ -49,6 +48,29 @@ def make_desc(db_row):
     return desc
 
 
+def rename_img_files(filename):
+    """ На lib.ru файлы PNG на самом деле являются файлами JPG. Wiki определяет эту ошибку и не загружает такие файлы.
+    Поэтому их надо переименовывать.
+    """
+    path_to_images = '/home/vladislav/workspace/4wiki/lib_ru/images_texts/'
+    os.chdir(path_to_images)
+    rows = db.images.find(png2jpg_renamed=1)
+    for r in rows:
+        n = r['name_ws']
+        print(n)
+        pairs = [
+            (n.replace('---.jpg', '.png'), n.replace('.png', '---.jpg')),
+            (n.replace('---.jpg', '.jpg'), n.replace('.jpg', '---.jpg')),
+            (n.replace('----.jpg', '.gif'), n.replace('.gif', '----.jpg')),
+        ]
+        if not Path(n).exists():
+            for check, new_filename in pairs:
+                check_f = Path(check)
+                if check_f.exists():
+                    check_f.rename(new_filename)
+                    print('file renamed', new_filename)
+                    continue
+
 class H:
     s = requests.Session()
     # url_args = '/w/api.php?action=query&format=json&prop=pageprops&utf8=1&titles='
@@ -69,27 +91,29 @@ h = H()
 offset = 0
 limit = 300
 # select * from images as i1 join images as i2 on i1.name_ws = i2.name_ws where i1.urn != i2.urn
-i1 = aliased(db.Images)
-i2 = aliased(db.Images)
-stmt_images_doubles = db.db_.s.query(i1.name_ws).join(i2, i1.name_ws == i2.name_ws).filter(i1.tid != i2.tid).group_by(
-    i1.filename)
+# i1 = aliased(db.Images)
+# i2 = aliased(db.Images)
+# stmt_images_doubles = db.db_.s.query(i1.name_ws).join(i2, i1.name_ws == i2.name_ws).filter(i1.tid != i2.tid).group_by(i1.filename)
 while True:
-    stmt = db.db_.s.query(db.Images, db.Titles, db.Authors) \
-        .select_from(db.Images).join(db.Titles).join(db.Authors).join(db.Htmls).filter(
+    stmt = db.db_.s.query(db.Images, db.Titles, db.Htmls) \
+        .select_from(db.Images).join(db.Titles).join(db.Htmls).filter(
         db.Titles.uploaded == True,
         # db.Titles.year <= 1917,
         db.Htmls.wiki_differ_wiki2 == 1,
         # db.Images.name_ws.like('text_1772_voina_s_polskimi_konfedertami_s07.jpg'),
         db.Images.downloaded == True, db.Images.do_upload == True, db.Images.uploaded == False,
         # db.Images.name_ws.not_in(stmt_images_doubles),
-        db.Images.name_ws.notlike('%png'), db.Images.name_ws.notlike('%gif')) \
+        # db.Images.name_ws.notlike('%png'),
+        db.Images.name_ws.notlike('%gif')) \
         .limit(limit).offset(offset)
     res = stmt.all()
     for r in res:
         if not h.is_page_exists(r.Images.name_ws):
             desc = make_desc(r)
-            run(r.Images.name_ws, desc)
-            u = db.images.update({db.Images.uploaded.name: True, 'id': r.Images.id}, ['id'])
+            filename = r.Images.name_ws
+            # filename = rename_img_file(filename)
+            run(filename, desc)
+        u = db.images.update({db.Images.uploaded.name: True, 'id': r.Images.id}, ['id'])
     if len(res) < limit:
         break
     offset += limit

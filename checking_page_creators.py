@@ -16,13 +16,19 @@ def process_page(title, tid):
     page = pwb.Page(SITE, title)
     if page.exists():
         # is_libru_in_summary_created = 'lib.ru' in page.oldest_revision['comment'].lower()
-        db.titles.update(dict(
+        created_before_0326 = bool(page.oldest_revision['timestamp'] < date_of_start_bot_uploading)
+        mybot_creater = bool(page.oldest_revision['user'] == 'TextworkerBot')
+        d = dict(
             id=r.id,
-            created_before_0326=page.oldest_revision['timestamp'] < date_of_start_bot_uploading,
-            mybot_creater=page.oldest_revision['user'] == 'TextworkerBot'
-        ), ['id'])
+            created_before_0326=created_before_0326,
+            mybot_creater=mybot_creater,
+        )
+        if not created_before_0326 and mybot_creater:
+            d['title_ws_as_uploaded'] = title
+        db.titles.update(d, ['id'])
     else:
         print('not exists:', title)
+        db.titles.update({'id': r.id, 'uploaded': False}, ['id'])
 
 
 if __name__ == '__main__':
@@ -38,13 +44,14 @@ if __name__ == '__main__':
     while True:
         stmt = db.db_.s.query(db.Titles).filter(
             db.Titles.uploaded == 1,
-            # db.Titles.title_ws_proposed.isnot(None),
-            db.Titles.title_ws_as_uploaded.isnot(None),
-            db.Titles.created_before_0326.is_(None),
+            db.Titles.title_ws_proposed.isnot(None),
+            db.Titles.title_ws_as_uploaded.is_(None),
+            # db.Titles.title_ws_as_uploaded.isnot(None),
+            # db.Titles.created_before_0326.is_(None),
         ).offset(offset).limit(limit)
         res = stmt.all()
         for r in res:
-            title = r.title_ws_as_uploaded
+            title = r.title_ws_proposed
             process_page(title, r.id)
         if len(res) < limit:
             break

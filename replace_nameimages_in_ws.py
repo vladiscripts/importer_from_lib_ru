@@ -5,6 +5,7 @@ from pathlib import Path
 import requests
 from urllib.parse import urlparse, parse_qs, parse_qsl, unquote, quote, urlsplit, urlunsplit
 import argparse
+import pywikibot as pwb
 
 import db_schema as db
 
@@ -29,17 +30,21 @@ SITE = pwb.Site('ru', 'wikisource', user='TextworkerBot')
 
 
 def replace_on_page(tid, pagename, replaces_pairs):
+    print(pagename)
     page = pwb.Page(SITE, pagename)
     if page.exists():
         text_new = page.text
         is_updated = False
         for old, new in replaces_pairs:
-            if old in text_new:
+            if old in text_new or old.replace('_', ' ') in text_new:
+                new = new.replace('_', ' ')
                 text_new = text_new.replace(old, new)
-            elif new in text_new:
+                text_new = text_new.replace(old.replace('_', ' '), new)
+            elif new in text_new or new.replace('_', ' ') in text_new:
                 is_updated = True
 
         if page.text != text_new:
+            print('changing:', pagename)
             page.text = text_new
             page.save(summary='images renamed')
             db.titles.update({'id': tid, 'img_renamed': True}, ['id'])
@@ -48,7 +53,7 @@ def replace_on_page(tid, pagename, replaces_pairs):
 
 
 def get_replaces(r):
-    repl = []
+    replaces_pairs_raw = []
 
     stmt = db.db_.s.query(db.Images).filter(
         db.Images.tid == r.id,
@@ -58,22 +63,24 @@ def get_replaces(r):
         p = Path(r.urn)
         old_name_ws = f'{p.parts[-2]}_{p.name}'
         name_ws = f'{p.parts[-3]}_{p.parts[-2]}_{p.name}'
-        repl.append([old_name_ws, name_ws])
+        replaces_pairs_raw.append([old_name_ws, name_ws])
 
-    replaces_pairs = [(f'"[{old}|" "[{new}|"') for old, new in repl]
-    replaces_list = [f':{x}|' for pair in repl for x in pair]
-    return replaces_list, replaces_pairs
+    replaces_pairs2 = [(f'":{old}|" ":{new}|"') for old, new in replaces_pairs_raw]
+    replaces_list = [f':{x}|' for pair in replaces_pairs_raw for x in pair]
+    replaces_pairs = [(f':{old}|', f':{new}|') for old, new in replaces_pairs_raw]
+    return replaces_list, replaces_pairs2, replaces_pairs
 
 
 def run():
     stmt = db.db_.s.query(db.Titles).join(db.Htmls).join(db.Images).filter(
         db.Titles.uploaded == 1,
         db.Htmls.wiki_differ_wiki2 == 1,
+        # db.Titles.id == 149520,
         # db.Titles.title == 'Маленький Мук',
     )  # .order_by(db.Titles.id.desc())
     res = stmt.all()
     for r in res:
-        replaces_list, replaces_pairs = get_replaces(r)
+        replaces_list, replaces_pairs2, replaces_pairs = get_replaces(r)
         title = r.title_ws_as_uploaded or r.title_ws_proposed
         # replace_images_of_page(title, replaces_list)
         replace_on_page(r.id, title, replaces_pairs)

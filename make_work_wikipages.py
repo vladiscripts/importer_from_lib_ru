@@ -32,7 +32,8 @@ class CategoriesbyAuthors(BaseModel):
 class X(D):
     wikified: str
     oo: bool
-    title_ws_proposed: str
+    title_ws_proposed: Optional[str]
+    title_ws_as_uploaded: Optional[str]
     author_tag: Optional[str]
     lang: Optional[str]
     year_dead: Optional[int]
@@ -127,7 +128,7 @@ class X(D):
                 if author_.group(1) not in (self.litarea, self.name):  # todo: name or self.name_WS?
                     cats.append('Возможна ошибка указания автора')
 
-        if '/Версия ' in self.title_ws_proposed:
+        if self.title_ws_proposed and '/Версия ' in self.title_ws_proposed:
             cats.append('Есть одноимённая страница не имевшаяся ранее, проверить на дубль и переименовать')
 
         cats = [f'Импорт/lib.ru/{c}' for c in cats]

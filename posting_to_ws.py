@@ -87,10 +87,9 @@ def posting_page(d: D, do_update_only=False):
     else:
         if page.exists():  # todo: to reposting
             print(f'page exists {tid=}, {title=}')
-            # db.titles.update({'id': tid, db.Titles.is_already_this_title_in_ws.name: True}, ['id'])
-            # page.title += '/Дубль'
-            # page.text = r['wiki_page'] + '\n[[Категория:Импорт/lib.ru/Дубли имён существующих страниц]]'
             # if page.isRedirectPage():
+            #     pass
+            # else:
             #     pass
         else:
             if ok := __posting_page(page, d.wikipage_text, summary):
@@ -111,15 +110,15 @@ def make_wikipages_to_db():
             # cola.title_ws.isnot(None),
             cola.title_ws_proposed.isnot(None),
             #            cola.text_len < 2048,
-            cola.year_dead <= year_limited,
-            cola.year <= year_limited,
+            # cola.year_dead <= year_limited,
+            # cola.year <= year_limited,
             # cola.wiki.like('%.da.ru%'),
             # cola.wikified.not_like('%feb-web.ru%'),
             # col.lang.isnot(None),
             # do_upload=True,
             # do_update_as_named_proposed=True,
             uploaded_text=True,
-            wiki_differ_wiki2=1,
+            # wiki_differ_wiki2=1,
             # tid={'>':150000},
             # tid=87481,
             # updated_as_named_proposed=False,
@@ -128,8 +127,8 @@ def make_wikipages_to_db():
         for r in res:
             d = make_work_wikipages.X.parse_obj(r)
             d.make_wikipage()
-            # posting_page(d, do_update_only=False)
-            posting_page(d, do_update_only=True)
+            posting_page(d, do_update_only=False)
+            # posting_page(d, do_update_only=True)
         if res.result_proxy.rowcount < limit:
             break
         offset += limit
