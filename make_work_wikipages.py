@@ -29,11 +29,18 @@ class CategoriesbyAuthors(BaseModel):
     text_lang_by_author: Optional[str]
 
 
+class CommonData:
+    categories_cached = [Category.parse_obj(r) for r in db.texts_categories_names.find()]
+    categories_authors_cached = [CategoriesbyAuthors.parse_obj(r) for r in db.authors_categories.find()]
+    cid_translation = db.texts_categories_names.find_one(name='Переводы')
+
+
 class X(D):
     wikified: str
     oo: bool
     title_ws_proposed: Optional[str]
     title_ws_as_uploaded: Optional[str]
+    title_ws_as_uploaded_2: Optional[str]
     author_tag: Optional[str]
     lang: Optional[str]
     year_dead: Optional[int]
@@ -128,7 +135,7 @@ class X(D):
                 if author_.group(1) not in (self.litarea, self.name):  # todo: name or self.name_WS?
                     cats.append('Возможна ошибка указания автора')
 
-        if self.title_ws_proposed and '/Версия ' in self.title_ws_proposed:
+        if self.title_ws_as_uploaded_2 and '/Версия ' in self.title_ws_as_uploaded_2:
             cats.append('Есть одноимённая страница не имевшаяся ранее, проверить на дубль и переименовать')
 
         cats = [f'Импорт/lib.ru/{c}' for c in cats]
@@ -155,7 +162,7 @@ class X(D):
         self.categories = cats
         self.categories_string = '\n'.join([f'[[Категория:{c}]]' for c in cats])
 
-    def fill_wikipage_template(self) -> str:
+    def fill_wikipage_template(self):
         self.wikipage_text = f"""\
 {{{{imported/lib.ru}}}}
 {{{{Отексте
@@ -197,12 +204,6 @@ class X(D):
 """
 
 
-class CommonData:
-    categories_cached = [Category.parse_obj(r) for r in db.texts_categories_names.find()]
-    categories_authors_cached = [CategoriesbyAuthors.parse_obj(r) for r in db.authors_categories.find()]
-    cid_translation = db.texts_categories_names.find_one(name='Переводы')
-
-
 def make_wikipage(r) -> str:
     d = X.parse_obj(r)
     d.clean_desc()
@@ -221,7 +222,7 @@ def make_wikipages_to_db():
                   _limit=10)
     # res = list(res)
     for r in res:
-        wikipage = make_wikipaage(r)
+        wikipage = make_wikipage(r)
         # db.db_htmls.upsert({'tid': d.tid, 'wikified': d.text}, ['tid'])
         # db.htmls.upsert({'tid': d.tid, 'wiki_page': wikipage, 'wiki_title': d.wiki_title}, ['tid'], ensure=True)
         print()

@@ -3,6 +3,7 @@ import time
 from datetime import datetime
 from math import floor
 import re
+import os
 import threading, queue
 import asyncio
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
@@ -11,6 +12,7 @@ from multiprocessing import cpu_count, Queue  # Вернет количеств�
 import multiprocessing
 import socket
 import sqlalchemy.exc
+from sqlalchemy.sql import or_
 from pathlib import Path
 from typing import Optional, Union, Tuple, List
 from pydantic import BaseModel, ValidationError, Field, validator, root_validator, Extra
@@ -24,6 +26,8 @@ import db_schema as db
 from get_parsed_html import get_html, get_content_from_html, get_content_from_html_soup
 from html2wiki import LibRu
 from parser_html_to_wiki import *
+
+os.environ.setdefault('PYPANDOC_PANDOC', '/home/vladislav/anaconda3/envs/web/bin/pandoc')
 
 
 class Image(BaseModel):
@@ -122,6 +126,7 @@ def tags_a_refs(soup):
 
 
 async def pypandoc_converor(html) -> str:
+    # v = pypandoc.get_pandoc_version()
     text = pypandoc.convert_text(html, 'mediawiki', format='html', verify_format=False)
     return text
 
@@ -162,6 +167,10 @@ async def convert_page(h: H):
     #        re.sub(r'<(p|dd)( [^>]+)?>[^\S\r\n]+', r'<\1\2>', html, flags=re.DOTALL))  # убрать пробелы после <p>, <dd>
     html = re.sub(r'<(p|dd)( [^>]+)?>[^\S\r\n]+', r'<\1\2>', html, flags=re.DOTALL)  # убрать пробелы после <p>, <dd>
 
+    # замена битых символов, иначе pandoc их удалит
+    html = re.sub(r"([а-яa-z])", r'\1' + '\u0301', html, flags=re.I)  # ударение
+    html = html.replace('', '■').replace('', '■') # нераспознанные симпвол меняем на '■'
+
     text = await pypandoc_converor(html)
     text = html_.unescape(html_.unescape(text.strip('/')))  # бывают вложенные сущности, вроде 'бес&amp;#1123;дку
 
@@ -194,15 +203,15 @@ async def convert_page(h: H):
     text = re.sub(r"^(''+) +", r'\1', text, flags=re.MULTILINE)  # лишние пробелы в курсиве в начале строки
     # todo: удаляет '' в начале строки, начиная строку с пробела, портя текст. 
     # https://ru.wikisource.org/w/index.php?title=%D0%A2%D1%80%D0%B8_%D0%B3%D0%BB%D0%B0%D0%B2%D1%8B_%D0%B8%D0%B7_%D0%B8%D1%81%D1%82%D0%BE%D1%80%D0%B8%D1%87%D0%B5%D1%81%D0%BA%D0%BE%D0%B9_%D0%BF%D0%BE%D1%8D%D1%82%D0%B8%D0%BA%D0%B8_(%D0%92%D0%B5%D1%81%D0%B5%D0%BB%D0%BE%D0%B2%D1%81%D0%BA%D0%B8%D0%B9)&diff=prev&oldid=4298606
-    
 
     text = re.sub("([^\n])({{right\|)\s*", r"\1\n\2", text, flags=re.DOTALL)
 
-    text = re.sub(r"([а-яa-z])", r'\1' + '\u0301', text, flags=re.I)  # ударение
     text = re.sub(r'(&#|#)?1122;', 'Ѣ', text)  # яти, с поврежденными кодами
     text = re.sub(r'(&#|#)?1123;', 'ѣ', text)
     text = re.sub(r'([а-я])122;', r'\1Ѣ', text, flags=re.I)
     text = re.sub(r'([а-я])123;', r'\1ѣ', text, flags=re.I)
+
+    text = re.sub(r'<su[bp]>(\s*)</su[bp]>', r'\1', text)
 
     wc = mwp.parse(text)
 
@@ -249,11 +258,12 @@ def process_images(h):
     for f in h.wikicode.filter_wikilinks(matches=lambda x: x.title.lower().startswith('file')):
         link = re.sub(r'^[Ff]ile:', '', str(f.title))
         if not link.startswith('/img/'):  # удалить ссылки на картинки которые не начинаются на '/img/
-            del(f)
+            del (f)
             continue
         p = Path(link)
-        # f.title = re.sub(r'^.+?/(text_\d+_).*?/([^/]+)$', r'File:\1\2', str(f.title))
-        # name_ws = re.search(r'^(text_\d+_).+', p.parts[-2]).group(1) + p.name
+        replaces = {'.png': '---.jpg', '.gif': '----.jpg'}
+        if p.suffix in replaces:
+            p = p.with_name(p.name.replace(p.suffix, replaces[p.suffix]))
         try:
             name_ws = f'{p.parts[-3]}_{p.parts[-2]}_{p.name}'
         except IndexError as e:
@@ -267,6 +277,7 @@ def process_images(h):
 count_pages_per_min = 0
 last_time = datetime.now()
 PROCESSES = 10
+# PROCESSES = 1
 
 
 class AsyncWorker:
@@ -305,22 +316,36 @@ class AsyncWorker:
         return process_images(h)
 
     async def feeder(self, offset) -> Optional[List[dict]]:
-        # t = db.all_tables
-        t = db.htmls
-        cols = t.table.c
+        ta = db.AllTables
         # for i in range(1, NUM_CORES + 1):
         print(f'{offset=} {self.i_core=}')
-        res = t.find(
-            cols.html.is_not(None),
-            # cols.wiki.is_(None),
-            # cols.wiki2.is_(None),
-            wiki_differ_wiki2=1,
-            wiki2_converted=0,
-            # tid=88278,
-            # tid=87499,
+
+        # stmt = db.db_.s.query(db.Htmls.tid, db.Htmls.html, db.Htmls.wiki) \
+        #     .select_from(db.Titles).join(db.Htmls).join(db.Wiki) \
+        #     .outerjoin(db.WSpages_w_img_err, db.Titles.title_ws_as_uploaded_2 == db.WSpages_w_img_err.pagename)
+        # # .outerjoin(db.Images)
+        # stmt = stmt.filter(db.WSpages_w_img_err.pagename.isnot(None))
+
+        stmt = db.db_.s.query(ta).filter(
+            # db.AllTables.tid > 98000,
+            # ta.tid == 90475,
+            # ta.tid == 94709,
+            # db.Titles.id.in_([89713, 94626]),
+            # db.Titles.title == 'Маленький Мук',
+            # db.Titles.title_ws_as_uploaded == 'Цезарь Каскабель (Верн)',
+            # or_(ta.time_update.isnot(None), ta.wiki2_converted == 0),
+            ta.uploaded_text == 1,
+            ta.wiki2_converted == 0,
+            # ta.wikified.like('%StrangeNoGraphicData%'),
+            # or_(
+            #     db.Htmls.wiki.not_like('%:' + db.Images.name_ws + '|%'),
+            #     db.Wiki.text.not_like('%:' + db.Images.name_ws + '|%'),
+            # ),
             # html={'like': '%%'},  # wiki2={'like': '%[[File:%'},
-            _limit=self.chunk_size, _offset=offset)
-        # _limit=limit, _offset=offset)
+        ).limit(self.chunk_size).offset(offset)  # .limit(10)  # .order_by(db.Titles.id.desc())
+        res = stmt.all()
+        res = [{c.name: getattr(r, c.name) for c in r.__table__.columns} for r in res]
+
         rows = [r for r in res]
         return rows
 
@@ -387,13 +412,14 @@ class AsyncWorker:
             for row in rows:
                 tx1['images'].insert_ignore(row, ['urn'])
             # tx1['images'].insert_many([row for row in rows], ['tid', 'name_ws'])
-            r = {'tid': h.tid, 'wiki': h.wiki_new, 'wiki2_converted': 1}
+            r = {'tid': h.tid, 'wiki': h.wiki_new, 'wiki2_converted': 1}  # 'wiki_differ_wiki2': 1
             # if h.wiki_new != h.wiki2:
             #     r.update({'wiki_differ_wiki2': 1})
             tx1['htmls'].update(r, ['tid'])
 
     async def work_row(self, r):
         h = H.parse_obj(r)
+        h.wiki = None
         h = await convert_page(h)
         h = await self.process_images(h)
         h.wiki_new = strip_wikitext(str(h.wikicode))

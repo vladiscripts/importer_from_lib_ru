@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import re
 import time
 import dateutil.parser
 import sqlalchemy as sa
@@ -61,8 +62,10 @@ def make_title_proposed(d):
     while True:
         is_already_this_title_in_ws = s.query(tl) \
             .filter(or_(tl.pagename == title_proposed, tl.pagename == title_proposed.replace(' ', '_'))).scalar()
-        is_already_this_title_in_proposed = s.query(tt) \
-            .filter(tt.title_ws_proposed == title_proposed, tt.id != d.tid).scalar()
+        is_already_this_title_in_proposed = s.query(tt).filter(
+            or_(tt.title_ws_proposed == title_proposed,
+                tt.title_ws_as_uploaded == title_proposed,
+                tt.title_ws_as_uploaded_2 == title_proposed), tt.id != d.tid).scalar()
 
         if is_already_this_title_in_ws or is_already_this_title_in_proposed:
             i += 1
@@ -84,13 +87,13 @@ def set_title_ws(d):
     else:
         d = make_title_proposed(d)
 
-    title_proposed = d.title_ws_proposed
+    title_ws = d.title_ws_proposed
 
-    r = {tt.title_ws_proposed: title_proposed,
+    r = {tt.title_ws_proposed: title_ws,
          tt.created_before_0326: None,
          tt.mybot_creater: None}
 
-    page = pwb.Page(SITE, title_proposed)
+    page = pwb.Page(SITE, title_ws)
     try:
         is_page_exists = page.exists()
     except pwb.exceptions.InvalidTitleError as e:
@@ -102,16 +105,19 @@ def set_title_ws(d):
     else:
 
         if is_page_exists:
-            print(f"page exists {d.tid=} {d.title=} {title_proposed=}")
+            print(f"page exists {d.tid=} {d.title=} {title_ws=}")
             if page.isRedirectPage():
                 r.update({tt.title_ws_proposed_identical_level: Level.redirect})
             else:
                 if f'= [{d.text_url} az.lib.ru]' in page.text:
-                    r.update({tt.title_ws_as_uploaded_2: title_proposed})
+                    r.update({
+                        tt.pid_ws: page.pageid,
+                        tt.title_ws_as_uploaded_2: title_ws
+                    })
 
                 if page.text == d.wikipage_text:
                     r.update({tt.title_ws_proposed_identical_level: Level.identical,
-                              tt.title_ws_as_uploaded: title_proposed, tt.title_ws_as_uploaded_2: title_proposed})
+                              tt.title_ws_as_uploaded: title_ws, tt.title_ws_as_uploaded_2: title_ws})
                 elif page.text[:5000] == d.wikipage_text[:5000]:
                     r.update({tt.title_ws_proposed_identical_level: Level.begin_identical_5000})
                 elif page.text[:2000] == d.wikipage_text[:2000]:
@@ -126,10 +132,64 @@ def set_title_ws(d):
 
         else:
             r = {tt.title_ws_proposed_identical_level: Level.not_exists}
-            print(f'page not exists {d.tid=}, {title_proposed=}')
+            print(f'page not exists {d.tid=}, {title_ws=}')
 
     s.query(tt).filter_by(id=d.tid).update(r)
     s.commit()
+
+
+def set_title_ws_by_uploaded_list(pagename):
+    r = {
+        # tt.title_ws_proposed: pagename,
+        tt.created_before_0326: None,
+        tt.mybot_creater: None}
+
+    page = pwb.Page(SITE, pagename)
+    try:
+        is_page_exists = page.exists()
+    except pwb.exceptions.InvalidTitleError as e:
+        print(e)
+        r.update({tt.title_ws_proposed_identical_level: Level.pagename_error})
+    except Exception as e:
+        print(e)
+        r.update({tt.title_ws_proposed_identical_level: None})
+    else:
+
+        if is_page_exists:
+            print(f"page exists {pagename=}")
+            if page.isRedirectPage():
+                r.update({tt.title_ws_proposed_identical_level: Level.redirect})
+            else:
+                if m := re.search(r'ИСТОЧНИК *?= \[([^ ]+) az.lib.ru\]', page.text):
+                    db_row = db.all_tables.find_one(text_url=m.group(1))
+                    if db_row:
+                        d = make_work_wikipages.X.parse_obj(db_row)
+                        d.make_wikipage()
+                        print(f"page exists {d.tid=} {pagename=}")
+
+                        r.update({
+                            tt.pid_ws: page.pageid,
+                            tt.title_ws_as_uploaded_2: pagename
+                        })
+
+                        if page.text == d.wikipage_text:
+                            r.update({tt.title_ws_proposed_identical_level: Level.identical,
+                                      tt.title_ws_as_uploaded: pagename, tt.title_ws_as_uploaded_2: pagename})
+                        elif page.text[:5000] == d.wikipage_text[:5000]:
+                            r.update({tt.title_ws_proposed_identical_level: Level.begin_identical_5000})
+                        elif page.text[:2000] == d.wikipage_text[:2000]:
+                            r.update({tt.title_ws_proposed_identical_level: Level.begin_identical_2000})
+                        else:
+                            r.update({tt.title_ws_proposed_identical_level: Level.not_identical})
+
+                        r.update({
+                            tt.created_before_0326: bool(
+                                page.oldest_revision['timestamp'] < date_of_start_bot_uploading),
+                            tt.mybot_creater: bool(page.oldest_revision['user'] == 'TextworkerBot')
+                        })
+
+                        s.query(tt).filter_by(id=d.tid).update(r)
+                        s.commit()
 
 
 def _main():
@@ -226,10 +286,12 @@ def main():
         stmt = s.query(ta).filter(
             ta.title.is_not(None),
             ta.wikified.is_not(None),
-            ta.title_ws_as_uploaded.is_(None),
+            # ta.title_ws_as_uploaded.is_(None),
             # ta.title_ws_proposed.is_not(None),
             # ta.title_ws_as_uploaded.is_not(None),
-            ta.title_ws_proposed_identical_level.is_(None),
+            ta.title_ws_proposed.is_(None),
+            # ta.title_ws_proposed_identical_level.is_(None),
+            ta.do_update_2 == 1,
             # cola.title_ws.isnot(None),
             # ta.title_ws_as_uploaded == 'Млечный путь (Авсеенко)/3/ДО',
             # ta.title == 'Алиса в стране чудес',
@@ -243,10 +305,10 @@ def main():
             # col.lang.isnot(None),
             # do_upload=True,
             # do_update_as_named_proposed=True,
-            ta.do_upload == 1,
+            ta.uploaded_text == 1,
             # wiki_differ_wiki2=1,
             # tid={'>':150000},
-            # ta.tid == 87504,
+            # ta.tid == 142825,
             # updated_as_named_proposed=False,
             # is_same_title_in_ws_already=False,
 
@@ -268,8 +330,28 @@ def main():
         offset += chunk_size
 
 
+def main_by_uploaded_list():
+    ta = db.AllTables
+    chunk_size = 500
+    offset = 0
+    while True:
+        stmt = db.db_.s.query(db.WSlistpages_uploaded).outerjoin(db.Titles,
+                                                                 # db.Titles.title_ws_as_uploaded_2 == db.WSlistpages_uploaded.pagename)
+                                                                 db.Titles.title_ws_as_uploaded == db.WSlistpages_uploaded.pagename)
+        stmt = stmt.filter(db.Titles.title_ws_as_uploaded_2.is_(None), db.Titles.uploaded == 1)
+        stmt = stmt.offset(offset).limit(chunk_size)  # .limit(2)
+        res = stmt.all()
+        for r in res:
+            set_title_ws_by_uploaded_list(r.pagename)
+
+        if len(res) < chunk_size:
+            break
+        offset += chunk_size
+
+
 if __name__ == '__main__':
-    main()
+    # main()
+    main_by_uploaded_list()
 
 """
 d = make_work_wikipages.X.parse_obj({**dict(res[0].Titles))

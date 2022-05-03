@@ -6,7 +6,7 @@ from pathlib import Path
 import dataset
 # import sqlalchemy
 from sqlalchemy import create_engine
-from sqlalchemy import Column, Integer, BigInteger, SmallInteger, String, Text, Date, Numeric, Boolean
+from sqlalchemy import Column, Integer, BigInteger, SmallInteger, String, Text, Date, Numeric, Boolean, DateTime
 from sqlalchemy import ForeignKey, ForeignKeyConstraint, MetaData, Table
 from sqlalchemy.dialects.mysql import MEDIUMTEXT, LONGTEXT
 from sqlalchemy.schema import Index, CreateSchema
@@ -65,6 +65,7 @@ class Authors(Base):
 class Titles(Base):
     __tablename__ = 'titles'
     id = Column(Integer, primary_key=True, autoincrement=True)
+    pid_ws = Column(Integer, unique=True)
     slug = Column(String(255), nullable=False)
     author_id = Column(Integer, ForeignKey('authors.id', ondelete='CASCADE', onupdate='CASCADE'),
                        nullable=False, index=True)
@@ -88,6 +89,10 @@ class Titles(Base):
     title_ws_as_uploaded_2 = Column(String(255), unique=True)
     title_ws_proposed_identical_level = Column(SmallInteger, index=True)
     renamed_manually = Column(Boolean)
+    do_update_2 = Column(Boolean)
+    is_lastedit_by_user = Column(Boolean)
+    time_update = Column(DateTime)
+
 
 
 Index('titles_author_id_slug_uindex', Titles.author_id, Titles.slug, unique=True)
@@ -100,6 +105,7 @@ class Wiki(Base):
     text = Column(LONGTEXT)
     desc = Column(Text)
     text_len = Column(Integer)
+    is_new_text_differed = Column(Boolean)
 
 
 class WikisourceListpages(Base):
@@ -138,7 +144,7 @@ class Images(Base):
     downloaded = Column(Boolean, default=0, nullable=False)
     do_upload = Column(Boolean, default=1, nullable=False)
     uploaded = Column(Boolean, default=0, nullable=False)
-    png2jpg_renamed = Column(Boolean)
+    renamed_org_ext = Column(String(5))
 
 
 Index('images_tid_name_ws_uindex', Images.tid, Images.name_ws, unique=True)
@@ -150,9 +156,10 @@ class Htmls(Base):
     tid = Column(Integer, ForeignKey('titles.id', onupdate='CASCADE', ondelete='CASCADE'), nullable=False, unique=True)
     html = Column(LONGTEXT)
     wiki = Column(LONGTEXT)
-    wiki2 = Column(LONGTEXT)
+    # wiki2 = Column(LONGTEXT)
     wiki2_converted = Column(Boolean, default=0, nullable=False)
     wiki_differ_wiki2 = Column(Boolean, default=0, nullable=False)
+    is_wikified = Column(Boolean)
 
 
 class Desc(Base):
@@ -177,13 +184,27 @@ class AuthorsCategories(Base):
     text_lang_by_author = Column(String(100))
 
 
-class WSpages_w_tpl_uploaded(Base):
-    __tablename__ = 'ws_pages_w_tpl_uploaded'
+class WSlistpages_uploaded(Base):
+    __tablename__ = 'ws_listpages_uploaded'
     id = Column(Integer, primary_key=True, autoincrement=True)
     pagename = Column(String(400), nullable=False, unique=True)
 
+
 class WSpages_w_images(Base):
     __tablename__ = 'ws_pages_w_images'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pagename = Column(String(400), nullable=False, unique=True)
+
+
+class WSpages_w_images_errors(Base):
+    __tablename__ = 'ws_pages_w_images_errors'
+    __comment__ = '-intersect -cat:"Страницы с неработающими файловыми ссылками" -cat:"Импорт/lib.ru"'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pagename = Column(String(400), nullable=False, unique=True)
+
+class WSpages_w_img_err(Base):
+    __tablename__ = 'ws_pages_w_img_err'
+    __comment__ = 'with /img/'
     id = Column(Integer, primary_key=True, autoincrement=True)
     pagename = Column(String(400), nullable=False, unique=True)
 
@@ -277,6 +298,7 @@ view_stmt = db_.s.query(
     t.is_already_this_title_in_ws,
     a.do_upload.label('do_upload_author'),
     t.do_upload,
+    t.do_update_2,
     t.uploaded.label('uploaded_text'),
     t.do_update_as_named_proposed,
     t.updated_as_named_proposed,
@@ -287,6 +309,7 @@ view_stmt = db_.s.query(
     t.created_before_0326,
     t.mybot_creater,
     t.renamed_manually,
+    t.is_lastedit_by_user,
     a.slug.label('slug_author'),
     a.id.label('author_id'),
     a.name,
@@ -312,6 +335,9 @@ view_stmt = db_.s.query(
     d.author_tag,
     ac.name_ws.label('author_cat'),
     ac.text_lang_by_author.label('lang'),
+    t.time_update,
+    h.is_wikified,
+    w.is_new_text_differed,
 ).join(Authors).join(Titles).join(Htmls).join(Desc).join(Wiki).join(AuthorsCategories) \
     .statement
 all_tables = create_view('all_tables', view_stmt, metadata)

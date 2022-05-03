@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 import os
+from pathlib import Path
 import shlex, subprocess
 import requests
 from urllib.parse import urlparse, parse_qs, parse_qsl, unquote, quote, urlsplit, urlunsplit
 from sqlalchemy.orm import aliased
 
 import db_schema as db
+from db_schema import Images, Titles, Htmls, Wiki
 
 path_to_images = '/home/vladislav/workspace/4wiki/lib_ru/images_texts/'
+os.chdir(path_to_images)
 
 def run(filename, desc):
     print(filename)
@@ -54,7 +57,7 @@ def rename_img_files(filename):
     """
     path_to_images = '/home/vladislav/workspace/4wiki/lib_ru/images_texts/'
     os.chdir(path_to_images)
-    rows = db.images.find(png2jpg_renamed=1)
+    rows = Images.find(png2jpg_renamed=1)
     for r in rows:
         n = r['name_ws']
         print(n)
@@ -91,29 +94,31 @@ h = H()
 offset = 0
 limit = 300
 # select * from images as i1 join images as i2 on i1.name_ws = i2.name_ws where i1.urn != i2.urn
-# i1 = aliased(db.Images)
-# i2 = aliased(db.Images)
+# i1 = aliased(Images)
+# i2 = aliased(Images)
 # stmt_images_doubles = db.db_.s.query(i1.name_ws).join(i2, i1.name_ws == i2.name_ws).filter(i1.tid != i2.tid).group_by(i1.filename)
 while True:
-    stmt = db.db_.s.query(db.Images, db.Titles, db.Htmls) \
-        .select_from(db.Images).join(db.Titles).join(db.Htmls).filter(
-        db.Titles.uploaded == True,
-        # db.Titles.year <= 1917,
-        db.Htmls.wiki_differ_wiki2 == 1,
-        # db.Images.name_ws.like('text_1772_voina_s_polskimi_konfedertami_s07.jpg'),
-        db.Images.downloaded == True, db.Images.do_upload == True, db.Images.uploaded == False,
-        # db.Images.name_ws.not_in(stmt_images_doubles),
-        # db.Images.name_ws.notlike('%png'),
-        db.Images.name_ws.notlike('%gif')) \
-        .limit(limit).offset(offset)
+    stmt = db.db_.s.query(Images, Titles, Htmls) \
+        .select_from(Images).join(Titles).join(Htmls).filter(
+        Titles.uploaded == True,
+        # Titles.year <= 1917,
+        # Htmls.wiki_differ_wiki2 == 1,
+        # Images.name_ws.like('text_1772_voina_s_polskimi_konfedertami_s07.jpg'),
+        # Images.downloaded == True,
+        Images.do_upload == True, Images.uploaded == False,
+        # Images.name_ws.not_in(stmt_images_doubles),
+        # Images.name_ws.notlike('%png'),
+        # Images.name_ws.notlike('%gif'),
+    ).limit(limit).offset(offset)
     res = stmt.all()
     for r in res:
+        if not Path(r.Images.name_ws).exists():
+            continue
         if not h.is_page_exists(r.Images.name_ws):
             desc = make_desc(r)
-            filename = r.Images.name_ws
             # filename = rename_img_file(filename)
-            run(filename, desc)
-        u = db.images.update({db.Images.uploaded.name: True, 'id': r.Images.id}, ['id'])
+            run(r.Images.name_ws, desc)
+        u = db.images.update({Images.uploaded.name: True, Images.downloaded.name: True, 'id': r.Images.id}, ['id'])
     if len(res) < limit:
         break
     offset += limit

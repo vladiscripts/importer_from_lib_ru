@@ -244,14 +244,17 @@ def process_images(h):
     """ to simple names of images """
     for f in h.wikicode.filter_wikilinks(matches=lambda x: x.title.lower().startswith('file')):
         link = re.sub(r'^[Ff]ile:', '', str(f.title))
+        if not link.startswith('/img/'):  # удалить ссылки на картинки которые не начинаются на '/img/
+            del (f)
+            continue
         p = Path(link)
-        # f.title = re.sub(r'^.+?/(text_\d+_).*?/([^/]+)$', r'File:\1\2', str(f.title))
-        # name_ws = re.search(r'^(text_\d+_).+', p.parts[-2]).group(1) + p.name
+        replaces = {'.png': '---.jpg', '.gif': '----.jpg'}
+        if p.suffix in replaces:
+            p = p.with_name(p.name.replace(p.suffix, replaces[p.suffix]))
         try:
-            p.parts[-2]
+            name_ws = f'{p.parts[-3]}_{p.parts[-2]}_{p.name}'
         except IndexError as e:
             continue
-        name_ws = f'{p.parts[-2]}_{p.name}'
         f.title = 'File:' + name_ws
         img = Image(tid=h.tid, urn=link, filename=p.name, name_ws=name_ws)
         h.images.append(img)

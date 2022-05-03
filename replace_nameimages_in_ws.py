@@ -86,5 +86,50 @@ def run():
         replace_on_page(r.id, title, replaces_pairs)
 
 
+def replace_img_names_in_db():
+    stmt = db.db_.s.query(db.Titles, db.Images, db.Htmls, db.Wiki).join(db.Htmls).join(db.Wiki).join(db.Images).filter(
+        db.Titles.do_upload == 1,
+        # db.Htmls.wiki_differ_wiki2 == 1,
+        db.Titles.id == 89713,
+        # db.Titles.title == 'Маленький Мук',
+        db.Htmls.wiki.not_like(':' + db.Images.name_ws + '|'),
+        db.Wiki.text.not_like(':' + db.Images.name_ws + '|'),
+    )  # .order_by(db.Titles.id.desc())
+    res = stmt.all()
+    # l = len(res)
+    for r in res:
+        i = r.Images
+        iname= str(i.name_ws)
+        p = Path(i.name_ws)
+        ss = [
+            f":{re.sub('(?!---).jpg', '----.jpg', iname)}|",
+            f":{iname.replace('.jpg', '---.jpg')}|",
+            f":{iname.replace('----.jpg', '.jpg')}|",
+            f":{iname.replace('---.jpg', '.jpg')}|",
+            ]
+        for s in ss:
+            if not f':{i.name_ws}|' in r.Htmls.wiki:
+                if s in r.Htmls.wiki:
+                    r.Htmls.wiki.replace(s, i.name_ws)
+
+            if not f':{i.name_ws}|' in r.Wiki.text:
+                if s in r.Wiki.text:
+                    r.Wiki.text.replace(s, i.name_ws)
+
+            # r.Htmls.wiki = r.Htmls.wiki.replace(
+            #     f':{p.stem.replace()}.jpg|',
+            #     f':{r.Images.name_ws}|',
+            # )
+
+            # replaces_list, replaces_pairs2, replaces_pairs = get_replaces(r)
+            # title = r.title_ws_as_uploaded or r.title_ws_proposed
+            # # replace_images_of_page(title, replaces_list)
+            # replace_on_page(r.id, title, replaces_pairs)
+
+            print()
+
+
+
 if __name__ == '__main__':
-    run()
+    # run()
+    replace_img_names_in_db()

@@ -498,7 +498,7 @@ def move_corner_spaces_from_tags(soup):
 
 
 def unwrap_empty_inline_tags(soup, additinals_tags=[]):
-    for tag_name in set(['i', 'b', 'em', 'strong'] + additinals_tags):
+    for tag_name in set(['i', 'b', 'em', 'strong', 'sup', 'sub'] + additinals_tags):
         for tag in soup.find_all(tag_name):
             if re_spaces_whole_string_with_newlines.match(tag.text) and not tag.attrs:
                 tag.unwrap()
