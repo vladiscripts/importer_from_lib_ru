@@ -14,14 +14,7 @@ from sqlalchemy.sql import or_
 
 import db_schema as db
 import make_work_wikipages
-
-
-class D(BaseModel):
-    class Config:
-        # validate_assignment = True
-        extra = Extra.allow
-        # arbitrary_types_allowed = True
-
+from db_set_titles_ws import Level
 
 SITE = pwb.Site('ru', 'wikisource', user='TextworkerBot')
 summary = '[[Викитека:Проект:Импорт текстов/Lib.ru]]'
@@ -29,6 +22,16 @@ year_limited = 2022 - 70 - 1
 
 date_of_start_bot_uploading = dateutil.parser.parse('2022-03-26')
 datetime_now = datetime.datetime.now()
+
+ta = db.AllTables
+tt = db.Titles
+
+
+class D(BaseModel):
+    class Config:
+        # validate_assignment = True
+        extra = Extra.allow
+        # arbitrary_types_allowed = True
 
 
 def posting_page(page: pwb.Page, text_new: str, summary: str):
@@ -53,8 +56,14 @@ def posting_page(page: pwb.Page, text_new: str, summary: str):
 
 def process_page(d: make_work_wikipages.X, update_only=False, update_text_content_only=False):
     tid = d.tid
-    # title = d.title_ws_as_uploaded or d.title_ws_as_uploaded_2 or d.title_ws_proposed
-    pagename = d.title_ws_as_uploaded_2
+    if update_only:
+        pagename = d.title_ws_as_uploaded_2
+    else:
+        pagename = d.title_ws_as_uploaded or d.title_ws_as_uploaded_2 or d.title_ws_proposed
+
+    if pagename is None:
+        print('pagename is None')
+        return
 
     if len(pagename.encode()) >= 255:
         print(f'title length > 255 bytes, {pagename=}')
@@ -87,25 +96,29 @@ def process_page(d: make_work_wikipages.X, update_only=False, update_text_conten
 
             if page.latest_revision['user'] == 'TextworkerBot' and not d.time_update:
                 update_text_content_only = False
-            if page.latest_revision['user'] == 'ButkoBot' and not d.time_update:
+            if page.latest_revision['user'] in ['ButkoBot', 'Lozman'] and not d.time_update:
                 update_text_content_only = True
             # if page.latest_revision['user'] == ['TextworkerBot', 'ButkoBot'] and not d.time_update:
             #     update_text_content_only = True
 
-            if page.latest_revision['user'] not in ['TextworkerBot', 'ButkoBot']:
+            text_new = re.sub(r'(<div class="text">).*?(</div>\s*(?:{{PD.*?}})?\s*\[\[Категория)',
+                              r'\1\n' + d.wikified.replace('\u005c', r'\\') + r'\n\2', page.text, flags=re.DOTALL) \
+                if update_text_content_only else d.wikipage_text
+            # if page.text != text_new:
+            #     print()
+
+            if page.latest_revision['user'] not in ['TextworkerBot', 'ButkoBot', 'Lozman']:
                 db.titles.update({'id': tid,
                                   'uploaded': True,
-                                  'updated_as_named_proposed': True,
+                                  # 'updated_as_named_proposed': True,
                                   'title_ws_as_uploaded': pagename,
-                                  'time_update': datetime_now,
+                                  # 'time_update': datetime_now,
                                   'is_lastedit_by_user': True,
                                   }, ['id'])
                 print("page.latest_revision['user'] not in ['TextworkerBot', 'ButkoBot']")
-            else:
-                text_new = re.sub(r'(<div class="text">).*?(</div>\s*(?:{{PD.*?}})?\s*\[\[Категория)',
-                                  r'\1\n' + d.wikified.replace('\u005c', r'\\') + r'\n\2', page.text, flags=re.DOTALL) \
-                    if update_text_content_only else d.wikipage_text
 
+
+            else:
                 if ok := posting_page(page, text_new, summary):
                     db.titles.update({'id': tid,
                                       'uploaded': True,
@@ -127,15 +140,20 @@ def process_page(d: make_work_wikipages.X, update_only=False, update_text_conten
             #     pass
         else:
             if ok := posting_page(page, d.wikipage_text, summary):
-                db.titles.update(
-                    {'id': tid, 'uploaded': True, 'title_ws_as_uploaded': pagename, 'time_update': datetime_now}, ['id'])
+                db.titles.update({'id': tid,
+                                  'uploaded': True,
+                                  'title_ws_as_uploaded': pagename,
+                                  'title_ws_as_uploaded_2': pagename,
+                                  'time_update': datetime_now,
+                                  'title_ws_proposed_identical_level': Level.identical,
+                                  'created_before_0326': False,
+                                  'mybot_creater': True},
+                                 ['id'])
                 print(f'{tid=}, {d.year_dead=}')
                 return True
 
 
 def make_wikipages_to_db():
-    ta = db.AllTables
-
     offset = 0
     limit = 100
     while True:
@@ -146,9 +164,9 @@ def make_wikipages_to_db():
         #         limit {limit} offset {offset};''')
 
         stmt = sa.select(db.AllTables).where(
-            # do_upload=True,
+            ta.do_upload == 1,
             # do_update_as_named_proposed=True,
-            ta.uploaded_text == 1,
+            ta.uploaded_text == 0,
             # do_update_2=True,
             # is_wikified=True,
             ta.is_wikified == 1,
@@ -160,13 +178,14 @@ def make_wikipages_to_db():
             # is_same_title_in_ws_already=False,
             # ta.wikified.isnot(None),
             # cola.title_ws_proposed.isnot(None),
-            ta.title_ws_as_uploaded_2.isnot(None),
+            # ta.title_ws_as_uploaded_2.isnot(None),
             # cola.title_ws_as_uploaded.isnot(None),
             # ta.time_update.is_(None),
-            or_(ta.time_update.is_(None), ta.time_update < dateutil.parser.parse("2022-05-01 11:30")),
-            # cola.text_len < 2048,
-            # cola.year_dead <= year_limited,
-            # cola.year <= year_limited,
+            # or_(ta.time_update.is_(None), ta.time_update < dateutil.parser.parse("2022-05-01 11:30")),
+            # ta.is_lastedit_by_user == 1,
+            ta.text_len < 2048,
+            # or_(ta.year_dead <= year_limited, ta.year <= 1917),
+            ta.oo == 1,
             # cola.wiki.like('%.da.ru%'),
             # cola.wikified.not_like('%feb-web.ru%'),
             # col.lang.isnot(None),
@@ -176,8 +195,8 @@ def make_wikipages_to_db():
         for r in res:
             d = make_work_wikipages.X.parse_obj(r)
             d.make_wikipage()
-            # posting_page(d, update_only=False)
-            process_page(d, update_only=True, update_text_content_only=True)
+            process_page(d, update_only=False)
+            # process_page(d, update_only=True, update_text_content_only=True)
         if len(res) < limit:
             break
         offset += limit

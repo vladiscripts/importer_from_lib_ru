@@ -104,7 +104,7 @@ def main():
         ).select_from(db.Titles).join(db.Htmls).join(db.Wiki).outerjoin(db.Desc) \
             .outerjoin(db.WSlistpages_uploaded, db.Titles.title_ws_as_uploaded_2 == db.WSlistpages_uploaded.pagename)
         stmt = stmt.filter(
-            db.Htmls.wiki2_converted == 1,
+            db.Htmls.wiki_converted == 1,
             db.Htmls.is_wikified == 0,
         )
         stmt = stmt.filter(db.WSlistpages_uploaded.pagename.isnot(None))
@@ -126,7 +126,7 @@ def main():
             # db.Htmls.tid == 101686,
             # db.Titles.do_upload == True,
             # db.Htmls.wiki_differ_wiki2 == 1,
-            db.Htmls.wiki2_converted == 1,
+            db.Htmls.wiki_converted == 1,
             # db.Htmls.is_wikified != 1,
             db.Htmls.is_wikified.is_(False),
             # db.Htmls.tid > 147000,

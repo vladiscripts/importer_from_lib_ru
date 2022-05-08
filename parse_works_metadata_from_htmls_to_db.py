@@ -75,7 +75,6 @@ class D(BaseModel):
             v = None if v == '' else v
         return v
 
-
 class CommonData:
     categories_cached = []
     authors_cache_db = []

@@ -35,6 +35,7 @@ naming_convention = {
 
 db_name = 'lib_ru'
 db_ = DB(db_name, use_os_env=True, use_orm=False)
+session = db_.s
 
 metadata = MetaData(bind=db_.engine, naming_convention=naming_convention)
 Base = declarative_base(metadata=metadata)
@@ -71,10 +72,11 @@ class Titles(Base):
                        nullable=False, index=True)
     year = Column(Integer)
     size = Column(Integer)
-    title = Column(Text)
+    title_old = Column(Text)
+    title = Column(String(500))
     desc = Column(Text)
     text_length = Column(Integer)
-    text_url = Column(Text)
+    text_url = Column(String(500), unique=True)
     oo = Column(Boolean, default=0)
     is_already_this_title_in_ws = Column(Boolean, default=0)
     do_upload = Column(Boolean, default=0, nullable=False, index=True)
@@ -157,7 +159,7 @@ class Htmls(Base):
     html = Column(LONGTEXT)
     wiki = Column(LONGTEXT)
     # wiki2 = Column(LONGTEXT)
-    wiki2_converted = Column(Boolean, default=0, nullable=False)
+    wiki_converted = Column(Boolean, default=0, nullable=False)
     wiki_differ_wiki2 = Column(Boolean, default=0, nullable=False)
     is_wikified = Column(Boolean)
 
@@ -222,61 +224,6 @@ from sqlalchemy_utils import create_view
 from sqlalchemy import select, func
 
 # view
-"""
-
-       t.slug as slug_text,
-       t.text_url,
-       t.id as tid,
-       t.year,
-       t.size,
-       w.text_len,
-       t.title,
-       t.desc as text_desc_raw,
-       d.desc as text_desc,
-       w.desc as text_desc_wikified,
-       t.oo,
-       t.is_already_this_title_in_ws,
-       a.do_upload as do_upload_author,
-       t.do_upload,
-       t.uploaded as uploaded_text,
-       t.do_update_as_named_proposed,
-       t.updated_as_named_proposed,
-       t.title_ws_proposed,
-       t.title_ws_as_uploaded,
-       a.slug as slug_author,
-       a.id as author_id,
-       a.name,
-       a.family_parsed,
-       a.names_parsed,
-       a.name_WS,
-       a.live_time,
-       a.town,
-       a.litarea,
-       d.translator,
-       a.image_url_filename,
-       a.image_filename_wiki,
-       a.desc as author_desc,
-       a.is_author,
-       a.uploaded as uploaded_author,
-       a.year_dead,
-       h.html,
-       h.wiki,
-       w.text as wikified,
-       h.wiki_differ_wiki2,
-       h.wiki2_converted,
-       d.tid as desc_tid,
-       d.author_tag,
-       ac.name_ws as author_cat,
-       ac.text_lang_by_author as lang
-from authors a
-         left join titles t on a.id = t.author_id
-         left join htmls h on t.id = h.tid
-         left join desc_ d on t.id = d.tid
-         left join wikified w on t.id = w.tid
-         left join authors_categories ac on a.litarea = ac.name_site;
-
-"""
-
 a = Authors
 t = Titles
 h = Htmls
@@ -287,10 +234,12 @@ view_stmt = db_.s.query(
     t.slug.label('slug_text'),
     t.text_url,
     t.id.label('tid'),
+    t.pid_ws,
     t.year,
     t.size,
     w.text_len,
     t.title,
+    t.title_old,
     t.desc.label('text_desc_raw'),
     d.desc.label('text_desc'),
     w.desc.label('text_desc_wikified'),
@@ -330,7 +279,7 @@ view_stmt = db_.s.query(
     h.wiki,
     w.text.label('wikified'),
     h.wiki_differ_wiki2,
-    h.wiki2_converted,
+    h.wiki_converted,
     d.tid.label('desc_tid'),
     d.author_tag,
     ac.name_ws.label('author_cat'),

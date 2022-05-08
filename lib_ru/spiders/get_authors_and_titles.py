@@ -44,6 +44,8 @@ class AuthorsSpider(CrawlSpider):
         # 'http://az.lib.ru/m/munshtejn_l_g/',
         # 'http://az.lib.ru/c/chukowskij_k_i',
         # 'http://az.lib.ru/c/chukowskij_k_i/text_1913_poezia_budushego.shtml',
+        # 'http://az.lib.ru/a/adelung_f_p/',
+        # 'http://az.lib.ru/a/abaza_k_k',
     ]
 
     rules = (
@@ -63,13 +65,16 @@ class AuthorsSpider(CrawlSpider):
     #     r = HtmlResponse(url="my HTML string", body=html, encoding=response.encoding)
     #     r = selector_from_html5(response)
     #
+    #     t = self.get_texts_metadata(response)
+    #
     #     yield item
 
-    def start_requests(self):
-        # urls = ['http://az.lib.ru/a/adamow_g/'] # 'http://az.lib.ru/a/abameleklazarew_s_s/', 'http://az.lib.ru/m/maksimow_s_w/'
-        urls = {url.rpartition('/')[0] for url in Path('urls_of_texts_to_scrape.txt').read_text().splitlines()}
-        for url in urls:
-            yield scrapy.Request(url, self.parse_item)
+    # def start_requests(self):
+    #     # urls = ['http://az.lib.ru/a/adamow_g/'] # 'http://az.lib.ru/a/abameleklazarew_s_s/', 'http://az.lib.ru/m/maksimow_s_w/'
+    #     urls = ['http://az.lib.ru/a/abaza_k_k']
+    #     # urls = {url.rpartition('/')[0] for url in Path('urls_of_texts_to_scrape.txt').read_text().splitlines()}
+    #     for url in urls:
+    #         yield scrapy.Request(url, self.parse_item)
 
     def parse_item(self, response):
         response = selector_from_html5(response)
@@ -145,8 +150,7 @@ class AuthorsSpider(CrawlSpider):
 
         yield l.load_item()
 
-        yield response.follow(response.url + 'about.shtml', callback=self.parse_about_page,
-                              cb_kwargs={'slug': slug})
+        yield response.follow(response.url + 'about.shtml', callback=self.parse_about_page, cb_kwargs={'slug': slug})
 
     def get_texts_metadata(self, response):
         t = []
@@ -154,6 +158,7 @@ class AuthorsSpider(CrawlSpider):
             d = dict(
                 slug=w.css('a ::attr(href)').get(),  # 'a[href^="text_"] ::attr(href)'
                 title=w.css('a[href] ::text').get(),
+                # todo ошибка распознавания если 'a[href] ::text'[0] not in ['Upd', 'New']
                 desc=''.join(w.css('dd').getall()),
                 oo=bool(w.xpath('b[contains(.,"Ѣ")]').get()),
                 size=w.css('b ::text').re_first(r'(\d+)k'),

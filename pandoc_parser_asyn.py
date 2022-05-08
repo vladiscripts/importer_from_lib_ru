@@ -210,6 +210,8 @@ async def convert_page(h: H):
     text = re.sub(r'(&#|#)?1123;', 'ѣ', text)
     text = re.sub(r'([а-я])122;', r'\1Ѣ', text, flags=re.I)
     text = re.sub(r'([а-я])123;', r'\1ѣ', text, flags=re.I)
+    text = re.sub(r'([а-я])23;', r'\1ѣ', text, flags=re.I)
+    text = re.sub(r'([а-я])22;', r'\1ѣ', text, flags=re.I)
 
     text = re.sub(r'<su[bp]>(\s*)</su[bp]>', r'\1', text)
 
@@ -333,9 +335,10 @@ class AsyncWorker:
             # db.Titles.id.in_([89713, 94626]),
             # db.Titles.title == 'Маленький Мук',
             # db.Titles.title_ws_as_uploaded == 'Цезарь Каскабель (Верн)',
-            # or_(ta.time_update.isnot(None), ta.wiki2_converted == 0),
-            ta.uploaded_text == 1,
-            ta.wiki2_converted == 0,
+            # or_(ta.time_update.isnot(None), ta.wiki_converted == 0),
+            ta.uploaded_text == 0,
+            ta.wiki_converted == 0,
+            ta.do_upload == 1,
             # ta.wikified.like('%StrangeNoGraphicData%'),
             # or_(
             #     db.Htmls.wiki.not_like('%:' + db.Images.name_ws + '|%'),
@@ -378,7 +381,7 @@ class AsyncWorker:
                 cols.html.is_not(None),
                 # cols.wiki.is_(None),
                 # cols.wiki2.is_(None),
-                wiki2_converted=1,
+                wiki_converted=1,
                 # tid=88278,
                 # tid=87499,
                 # html={'like': '%%'},  # wiki2={'like': '%[[File:%'},
@@ -412,7 +415,7 @@ class AsyncWorker:
             for row in rows:
                 tx1['images'].insert_ignore(row, ['urn'])
             # tx1['images'].insert_many([row for row in rows], ['tid', 'name_ws'])
-            r = {'tid': h.tid, 'wiki': h.wiki_new, 'wiki2_converted': 1}  # 'wiki_differ_wiki2': 1
+            r = {'tid': h.tid, 'wiki': h.wiki_new, 'wiki_converted': 1}  # 'wiki_differ_wiki2': 1
             # if h.wiki_new != h.wiki2:
             #     r.update({'wiki_differ_wiki2': 1})
             tx1['htmls'].update(r, ['tid'])

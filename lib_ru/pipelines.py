@@ -6,12 +6,14 @@
 # See: http://doc.scrapy.org/en/latest/topics/item-pipeline.html
 from urllib.parse import urlparse, parse_qs, parse_qsl, unquote, quote, urlsplit, urlunsplit
 from pathlib import Path
+import threading, queue
 import scrapy
 from scrapy.pipelines.images import ImagesPipeline
 
 import db_schema as db
 from lib_ru.items import *
 
+lock = threading.RLock()
 
 class LibRuPipeline(object):
     cache_works = {}
@@ -23,7 +25,7 @@ class LibRuPipeline(object):
             db.htmls.upsert(item, ['tid'])
 
         elif isinstance(item, AuthorItem):
-            with db.db_lock:
+            with lock:
                 works = item['works']
                 del item['works']
                 db.authors.upsert(item, ['slug'])
@@ -47,7 +49,8 @@ class LibRuPipeline(object):
 
 class TextsImagesPipeline(ImagesPipeline):
     def get_media_requests(self, item, info):
-        yield scrapy.Request(item['image_url'])
+        if isinstance(item, ImageText):
+            yield scrapy.Request(item['image_url'])
 
     def item_completed(self, results, item, info):
         for ok, x in results:

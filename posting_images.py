@@ -4,6 +4,7 @@ from pathlib import Path
 import shlex, subprocess
 import requests
 from urllib.parse import urlparse, parse_qs, parse_qsl, unquote, quote, urlsplit, urlunsplit
+import sqlalchemy as sa
 from sqlalchemy.orm import aliased
 
 import db_schema as db
@@ -12,13 +13,14 @@ from db_schema import Images, Titles, Htmls, Wiki
 path_to_images = '/home/vladislav/workspace/4wiki/lib_ru/images_texts/'
 os.chdir(path_to_images)
 
+
 def run(filename, desc):
     print(filename)
     # command = 'python /home/vladislav/usr/pwb/core/pwb.py upload -family:wikisource -lang:ru -keep -recursive -noverify -async -abortonwarn ' \
     #           f'-summary:"+" "{path_to_images}{filename}" "{desc}"'
     # '-descfile:"/home/vladislav/workspace/4wiki/lib_ru/desc_ws_upload_for_text_images.wiki" ' \
     cmd_list = ['python3', '/home/vladislav/usr/pwb/core/pwb.py', 'upload', '-family:wikisource', '-lang:ru',
-                '-keep', '-recursive', '-noverify', '-async', 
+                '-keep', '-recursive', '-noverify', '-async',
                 '-ignorewarn', '-always',
                 #  '-abortonwarn', 
                 '-summary:"+"',
@@ -74,19 +76,21 @@ def rename_img_files(filename):
                     print('file renamed', new_filename)
                     continue
 
+
 class H:
     s = requests.Session()
     # url_args = '/w/api.php?action=query&format=json&prop=pageprops&utf8=1&titles='
     url_args = '/w/api.php?action=query&format=json&prop=pageprops&utf8=1&titles='
 
     def is_page_exists(self, title):
+        url_args = self.url_args + quote('File:' + title)
         for baseurl in ['https://commons.wikimedia.org', 'https://ru.wikisource.org']:
             try:
-                r = self.s.get(baseurl + self.url_args + quote('File:' + title))
+                r = self.s.get(baseurl + url_args)
             except requests.exceptions.ConnectionError as e:
                 self.s = requests.Session()
-            r = self.s.get(baseurl + self.url_args + quote('File:' + title))
-            if not '-1' in r.json()['query']['pages']:
+            r = self.s.get(baseurl + url_args)
+            if '-1' not in r.json()['query']['pages']:
                 return True
 
 
@@ -96,9 +100,9 @@ limit = 300
 # select * from images as i1 join images as i2 on i1.name_ws = i2.name_ws where i1.urn != i2.urn
 # i1 = aliased(Images)
 # i2 = aliased(Images)
-# stmt_images_doubles = db.db_.s.query(i1.name_ws).join(i2, i1.name_ws == i2.name_ws).filter(i1.tid != i2.tid).group_by(i1.filename)
+# stmt_images_doubles = db.session.query(i1.name_ws).join(i2, i1.name_ws == i2.name_ws).filter(i1.tid != i2.tid).group_by(i1.filename)
 while True:
-    stmt = db.db_.s.query(Images, Titles, Htmls) \
+    stmt = db.session.query(Images, Titles, Htmls) \
         .select_from(Images).join(Titles).join(Htmls).filter(
         Titles.uploaded == True,
         # Titles.year <= 1917,
@@ -112,13 +116,25 @@ while True:
     ).limit(limit).offset(offset)
     res = stmt.all()
     for r in res:
-        if not Path(r.Images.name_ws).exists():
+        iid = r.Images.id
+        text_url = r.Titles.text_url
+        text_pagename = r.Titles.title_ws_as_uploaded_2
+        filename = r.Images.name_ws
+        pagename = f'File:{r.Images.name_ws}'
+        if not Path(filename).exists():
             continue
-        if not h.is_page_exists(r.Images.name_ws):
+        if not h.is_page_exists(filename):
+            print(f'uploading {filename}')
             desc = make_desc(r)
             # filename = rename_img_file(filename)
-            run(r.Images.name_ws, desc)
-        u = db.images.update({Images.uploaded.name: True, Images.downloaded.name: True, 'id': r.Images.id}, ['id'])
+            run(filename, desc)
+        if h.is_page_exists(filename):
+            print(f'h.is_page_exists({filename})')
+            # db.images.update({Images.uploaded.name: True, Images.downloaded.name: True, 'id': r.Images.id}, ['id'])
+            db.session.query(Images).filter(Images.id == iid).update({Images.uploaded: True, Images.downloaded: True})
+            # stmt = sa.update(Images).values({Images.uploaded: True, Images.downloaded:True}).where(Images.id == iid)
+            # db.session.execute(stmt)
+            db.session.commit()
     if len(res) < limit:
         break
     offset += limit

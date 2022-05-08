@@ -138,6 +138,15 @@ class X(D):
         if self.title_ws_as_uploaded_2 and '/Версия ' in self.title_ws_as_uploaded_2:
             cats.append('Есть одноимённая страница не имевшаяся ранее, проверить на дубль и переименовать')
 
+        if not self.is_author:
+            cats.append('Возможна ошибка распознавания имени автора')
+
+        if re.search(r'[\[\]]', self.title):
+            cats.append('Некорректные символы в заглавии')
+
+        if len(self.title.encode()) >= 255:
+            cats.append('Слишком длинный заголовок')
+
         cats = [f'Импорт/lib.ru/{c}' for c in cats]
 
         cats_from_db = [c.name_ws for r in db.texts_categories.find(tid=self.tid) for c in C.categories_cached

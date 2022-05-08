@@ -279,7 +279,7 @@ def main():
                 cols.html.is_not(None),
                 # cols.wiki.is_(None),
                 # cols.wiki2.is_(None),
-                wiki2_converted=1,
+                wiki_converted=1,
                 # tid=88278,
                 # tid=87499,
                 # html={'like': '%%'},  # wiki2={'like': '%[[File:%'},
@@ -305,7 +305,7 @@ def main():
             for row in rows:
                 tx1['images'].insert_ignore(row, ['tid', 'name_ws'])
             # tx1['images'].insert_many([row for row in rows], ['tid', 'name_ws'])
-            r = {'tid': h.tid, 'wiki': h.wiki_new, 'wiki2_converted': 1}
+            r = {'tid': h.tid, 'wiki': h.wiki_new, 'wiki_converted': 1}
             if h.wiki_new != h.wiki2:
                 r.update({'wiki_differ_wiki2': 1})
             tx1['htmls'].update(r, ['tid'])

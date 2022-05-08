@@ -10,7 +10,7 @@ class TextImagesSpider(CrawlSpider):
     custom_settings = {'IMAGES_STORE': 'images_texts', 'HTTPCACHE_ENABLED': False}
 
     def start_requests(self):
-        query = db.db_.s.query(db.Images).filter(db.Images.downloaded == False)  # limit(5)
+        query = db.db_.s.query(db.Images).filter(db.Images.downloaded == 0)  # limit(5)
         for db_row in query.all():
             yield Request('http://localhost', callback=self.parse_item, dont_filter=True, cb_kwargs={'db_row': db_row})
 
