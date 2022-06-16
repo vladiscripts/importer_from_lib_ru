@@ -30,8 +30,8 @@ ta = db.Authors
 class D(BaseModel):
     tid: int = Field(alias='id')
     author_id: int
-    pagename: str = Field(alias='name_WS')
-    family: str = Field(alias='family_parsed')
+    author_pagename: str = Field(alias='name_WS')
+    author_family: str = Field(alias='family_parsed')
     title_ws_as_uploaded_2: str
     pageauthor_subcategory_added: bool
     author_subcategory_posted: bool
@@ -70,8 +70,8 @@ def posting_category_page(d, cat_name):
         if not cat_page.exists():
             cat_text = f'__HIDDENCAT__\n' \
                        f'{{{{Импорт текстов/az.lib.ru/категория автора}}}}\n' \
-                       f'[[Категория:Импорт/lib.ru/Категории авторов|{d.family}]]\n' \
-                       f'[[Категория:{d.pagename}]]\n'
+                       f'[[Категория:Импорт/lib.ru/Категории авторов|{d.author_family}]]\n' \
+                       f'[[Категория:{d.author_pagename}]]\n'
             posting_page(cat_page, cat_text, summary='[[Викитека:Проект:Импорт текстов/Lib.ru]]')
         if cat_page.exists():
             # stmt = sa.update(ta).values({ta.author_subcategory_posted: 1}).where(ta.id == d.author_id)
@@ -107,7 +107,7 @@ def process_page(d: D):
             print(f'page isRedirectPage, getRedirectTarget()')
             page = page.getRedirectTarget()
 
-        cat_name = f'Категория:Импорт/az.lib.ru/{d.pagename}'
+        cat_name = f'Категория:Импорт/az.lib.ru/{d.author_pagename}'
         text_new = f'{page.text}\n[[{cat_name}]]\n'
 
         with lock:
