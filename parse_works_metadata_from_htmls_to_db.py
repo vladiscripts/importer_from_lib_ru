@@ -219,7 +219,7 @@ def parse_translator(annotation_, author_line, d) -> D:
                         href = a_.attrs.get('href', '').strip()
                         if href and href != '':
                             for a in CommonData.authors_cache_db:
-                                if a.slug == urlsplit(href).path.replace('/editors', '').rstrip('/'):
+                                if a.slug_author == urlsplit(href).path.replace('/editors', '').rstrip('/'):
                                     d.translator = a.name_WS
                             else:
                                 d.translator = d.name_WS
@@ -336,7 +336,7 @@ def db_add_categories(d):
     for dc in d.categories:
         # for cid, slug, name in categories_cached:
         for c in categories_cached:
-            if c.slug == dc.slug:
+            if c.slug_author == dc.slug_author:
                 break
         else:
             # добавить новую категорию сайта в БД
@@ -344,8 +344,8 @@ def db_add_categories(d):
             tn = db.texts_categories_names
             tn.insert(dc.dict(), ensure=True)
             # print('to db find_one', d.tid)
-            cid = tn.find_one(slug=dc.slug)['id']
-            categories_cached.append(Category(cid=cid, slug=dc.slug, name=dc.name))
+            cid = tn.find_one(slug=dc.slug_author)['id']
+            categories_cached.append(Category(cid=cid, slug=dc.slug_author, name=dc.name))
         categories_to_add.append({'tid': d.tid, 'category_id': c.cid})
 
     tc = db.texts_categories

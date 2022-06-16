@@ -169,7 +169,10 @@ async def convert_page(h: H):
 
     # замена битых символов, иначе pandoc их удалит
     html = re.sub(r"([а-яa-z])", r'\1' + '\u0301', html, flags=re.I)  # ударение
-    html = html.replace('', '■').replace('', '■') # нераспознанные симпвол меняем на '■'
+    html = html.replace('', '■').replace('', '■') # нераспознанные символы меняем на '■'
+    html = re.sub(r'NoNo ([\dIVX]+)', r'№№ \1', html)
+    html = re.sub(r'No ([\dIVX]+)', r'№ \1', html)
+    html = re.sub(r'([\dIVX])--([\dIVX])', r'\1—\2', html)
 
     text = await pypandoc_converor(html)
     text = html_.unescape(html_.unescape(text.strip('/')))  # бывают вложенные сущности, вроде 'бес&amp;#1123;дку
@@ -196,7 +199,7 @@ async def convert_page(h: H):
 
     text = re.sub(r'([Α-Ω]+)', r'{{lang|grc|\1}}', text, flags=re.I)
 
-    text = re.sub(r'(\n==+[^=]+?<br[/ ]*>)\n+', r'\1', text)  # fix: \n после <br> в заголовках
+    text = re.sub(r'(\n==+[^=]+?)<br[/ ]*>\n+', r'\1 <br>', text)  # fix: \n после <br> в заголовках
 
     text = re.sub(r"([^'])''''([^'])", r'\1\2', text)  # вики-курсив нулевой длинны
     text = re.sub(r"([^'])''([-—.\" ]+)''([^'])", r'\1\2\3', text)  # излишний курсив вокруг пробелов и знак.преп.
@@ -259,9 +262,10 @@ def process_images(h):
     """ to simple names of images """
     for f in h.wikicode.filter_wikilinks(matches=lambda x: x.title.lower().startswith('file')):
         link = re.sub(r'^[Ff]ile:', '', str(f.title))
-        if not link.startswith('/img/'):  # удалить ссылки на картинки которые не начинаются на '/img/
-            del (f)
-            continue
+        # todo
+        # if not link.startswith('/img/'):  # удалить ссылки на картинки которые не начинаются на '/img/
+        #     del (f)
+        #     continue
         p = Path(link)
         replaces = {'.png': '---.jpg', '.gif': '----.jpg'}
         if p.suffix in replaces:

@@ -104,19 +104,20 @@ limit = 300
 while True:
     stmt = db.session.query(Images, Titles, Htmls) \
         .select_from(Images).join(Titles).join(Htmls).filter(
-        Titles.uploaded == True,
+        Titles.uploaded == 1,
         # Titles.year <= 1917,
         # Htmls.wiki_differ_wiki2 == 1,
         # Images.name_ws.like('text_1772_voina_s_polskimi_konfedertami_s07.jpg'),
         # Images.downloaded == True,
-        Images.do_upload == True, Images.uploaded == False,
+        Images.do_upload == 1, Images.uploaded == 0,
         # Images.name_ws.not_in(stmt_images_doubles),
         # Images.name_ws.notlike('%png'),
         # Images.name_ws.notlike('%gif'),
+        # Titles.id == 101104,
     ).limit(limit).offset(offset)
     res = stmt.all()
     for r in res:
-        iid = r.Images.id
+        iid = r.Images.cid
         text_url = r.Titles.text_url
         text_pagename = r.Titles.title_ws_as_uploaded_2
         filename = r.Images.name_ws

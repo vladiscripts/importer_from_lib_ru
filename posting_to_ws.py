@@ -139,6 +139,7 @@ def process_page(d: make_work_wikipages.X, update_only=False, update_text_conten
             # else:
             #     pass
         else:
+            print(f'{pagename=}')
             if ok := posting_page(page, d.wikipage_text, summary):
                 db.titles.update({'id': tid,
                                   'uploaded': True,
@@ -183,9 +184,9 @@ def make_wikipages_to_db():
             # ta.time_update.is_(None),
             # or_(ta.time_update.is_(None), ta.time_update < dateutil.parser.parse("2022-05-01 11:30")),
             # ta.is_lastedit_by_user == 1,
-            ta.text_len < 2048,
-            # or_(ta.year_dead <= year_limited, ta.year <= 1917),
-            ta.oo == 1,
+            # ta.text_len < 2048,
+            or_(ta.year_dead <= year_limited, ta.year <= 1917),
+            # ta.oo == 1,
             # cola.wiki.like('%.da.ru%'),
             # cola.wikified.not_like('%feb-web.ru%'),
             # col.lang.isnot(None),

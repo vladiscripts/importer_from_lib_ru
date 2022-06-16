@@ -22,7 +22,7 @@ cid_translation: int = None
 
 
 class CategoriesbyAuthors(BaseModel):
-    id: int
+    cid: int
     name_site: str
     name_ws: str
     text_cat_by_author: Optional[str]
@@ -212,15 +212,11 @@ class X(D):
 {self.categories_string}
 """
 
-
+# test
 def make_wikipage(r) -> str:
     d = X.parse_obj(r)
-    d.clean_desc()
-    d.set_dates_published()
-    d.text_replaces()
-    d.categorization(CommonData)
-    wikipage = fill_wikipage(d)
-    return wikipage
+    d.make_wikipage()
+    return d.wikipage_text
 
 
 # test

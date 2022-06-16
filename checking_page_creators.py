@@ -27,7 +27,7 @@ def get_page_data(page) -> dict:
 
 def process_page_by_main_list(r):
     title = r.title_ws_proposed
-    tid = r.id
+    tid = r.cid
     print(title)
     page = pwb.Page(SITE, title)
     if page.exists():
@@ -60,7 +60,7 @@ def by_main_list():
 
 def process_page_by_uploaded_list(r):
     title = r.title_ws_proposed
-    tid = r.id
+    tid = r.cid
     print(title)
     page = pwb.Page(SITE, title)
     if page.exists():
@@ -84,7 +84,7 @@ def by_uploaded_list():
         res = stmt.all()
         for r in res:
             title = r.title_ws_proposed
-            process_page(title, r.id)
+            process_page(title, r.cid)
         if len(res) < limit:
             break
         offset += limit

@@ -17,7 +17,7 @@ class TextImagesSpider(CrawlSpider):
     def parse_item(self, r, db_row):
         i = ImageText()
         i['image_url'] = 'http://az.lib.ru' + db_row.urn
-        i['id'] = db_row.id
+        i['id'] = db_row.cid
         i['tid'] = db_row.tid
         i['filename'] = db_row.name_ws
         yield i

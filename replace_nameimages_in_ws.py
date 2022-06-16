@@ -56,7 +56,7 @@ def get_replaces(r):
     replaces_pairs_raw = []
 
     stmt = db.db_.s.query(db.Images).filter(
-        db.Images.tid == r.id,
+        db.Images.tid == r.cid,
     )
     res = stmt.all()
     for r in res:
@@ -83,7 +83,7 @@ def run():
         replaces_list, replaces_pairs2, replaces_pairs = get_replaces(r)
         title = r.title_ws_as_uploaded or r.title_ws_proposed
         # replace_images_of_page(title, replaces_list)
-        replace_on_page(r.id, title, replaces_pairs)
+        replace_on_page(r.cid, title, replaces_pairs)
 
 
 def replace_img_names_in_db():

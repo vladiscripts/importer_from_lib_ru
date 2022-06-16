@@ -53,14 +53,18 @@ class Authors(Base):
     litarea = Column(String(255))
     desc = Column(Text)
     name_WS = Column(String(255))
+    pagename_as_uploaded = Column(String(255), unique=True)
     year_dead = Column(Integer)
     is_author = Column(Boolean, default=1, nullable=False)
     do_upload = Column(Boolean, default=1, nullable=False)
     uploaded = Column(Boolean, default=0, nullable=False)
+    already_created = Column(Boolean, default=0, nullable=False)
     image_url = Column(Text)
     image_url_filename = Column(String(255))
     image_filename_wiki = Column(Text)
     filename = Column(Text)
+    pid_ws = Column(Integer, unique=True)
+    author_subcategory_posted = Column(Boolean, default=0, nullable=False)
 
 
 class Titles(Base):
@@ -94,7 +98,7 @@ class Titles(Base):
     do_update_2 = Column(Boolean)
     is_lastedit_by_user = Column(Boolean)
     time_update = Column(DateTime)
-
+    pageauthor_subcategory_added = Column(Boolean, default=0, nullable=False)
 
 
 Index('titles_author_id_slug_uindex', Titles.author_id, Titles.slug, unique=True)
@@ -179,7 +183,7 @@ class Desc(Base):
 
 class AuthorsCategories(Base):
     __tablename__ = 'authors_categories'
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    cid = Column(Integer, primary_key=True, autoincrement=True)
     name_site = Column(String(500), nullable=False, unique=True)
     name_ws = Column(String(500))
     text_cat_by_author = Column(String(500))
@@ -189,26 +193,23 @@ class AuthorsCategories(Base):
 class WSlistpages_uploaded(Base):
     __tablename__ = 'ws_listpages_uploaded'
     id = Column(Integer, primary_key=True, autoincrement=True)
-    pagename = Column(String(400), nullable=False, unique=True)
+    pagename = Column(String(400), ForeignKey('titles.title_ws_as_uploaded_2', onupdate='CASCADE', ondelete='CASCADE'),
+                      nullable=False, unique=True)
 
 
 class WSpages_w_images(Base):
     __tablename__ = 'ws_pages_w_images'
     id = Column(Integer, primary_key=True, autoincrement=True)
-    pagename = Column(String(400), nullable=False, unique=True)
+    pagename = Column(String(400), ForeignKey('titles.title_ws_as_uploaded_2', onupdate='CASCADE', ondelete='CASCADE'),
+                      nullable=False, unique=True)
 
 
 class WSpages_w_images_errors(Base):
     __tablename__ = 'ws_pages_w_images_errors'
     __comment__ = '-intersect -cat:"Страницы с неработающими файловыми ссылками" -cat:"Импорт/lib.ru"'
     id = Column(Integer, primary_key=True, autoincrement=True)
-    pagename = Column(String(400), nullable=False, unique=True)
-
-class WSpages_w_img_err(Base):
-    __tablename__ = 'ws_pages_w_img_err'
-    __comment__ = 'with /img/'
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    pagename = Column(String(400), nullable=False, unique=True)
+    pagename = Column(String(400), ForeignKey('titles.title_ws_as_uploaded_2', onupdate='CASCADE', ondelete='CASCADE'),
+                      nullable=False, unique=True)
 
 
 # all_tables = Table(
