@@ -63,8 +63,6 @@ def posting_page(page: pwb.Page, text_new: str, summary: str):
 
 
 def posting_category_page(d, cat_name):
-    # cat_page = pwb.Page(SITE, cat_name)
-    # if not cat_page.exists():
     if not d.author_subcategory_posted:
         cat_page = pwb.Page(SITE, cat_name)
         if not cat_page.exists():
@@ -74,14 +72,12 @@ def posting_category_page(d, cat_name):
                        f'[[Категория:{d.author_pagename}]]\n'
             posting_page(cat_page, cat_text, summary='[[Викитека:Проект:Импорт текстов/Lib.ru]]')
         if cat_page.exists():
-            # stmt = sa.update(ta).values({ta.author_subcategory_posted: 1}).where(ta.id == d.author_id)
-            # db.db_.s.execute(stmt)
-            # db.db_.s.commit()
-            db.db_.s.query(ta).filter(ta.id == d.author_id).update({ta.author_subcategory_posted: 1})
+            stmt = sa.update(ta).values({ta.author_subcategory_posted: 1}).where(ta.id == d.author_id)
+            db.db_.s.execute(stmt)
+            db.db_.s.commit()
 
 
 def process_page(d: D):
-    # tid = d.tid
     pagename = d.title_ws_as_uploaded_2
     print(f'{pagename=}')
 
@@ -117,13 +113,11 @@ def process_page(d: D):
                 posting_category_page(d, cat_name)
 
             if f'[[{cat_name}]]' in page.text:
-                # stmt = sa.update(tt)\
-                #     .values({tt.pageauthor_subcategory_added: 1, tt.title_ws_as_uploaded_2: page.title()}) \
-                #     .where(tt.id == d.tid)
-                # db.db_.s.execute(stmt)
-                # db.db_.s.commit()
-                db.db_.s.query(tt).filter(tt.id == d.tid)\
-                    .update({tt.pageauthor_subcategory_added: 1, tt.title_ws_as_uploaded_2: page.title()})
+                stmt = sa.update(tt) \
+                    .values({tt.pageauthor_subcategory_added: 1, tt.title_ws_as_uploaded_2: page.title()}) \
+                    .where(tt.id == d.tid)
+                db.db_.s.execute(stmt)
+                db.db_.s.commit()
 
             return True
 
@@ -141,7 +135,7 @@ def worker():
     )
     # res = db.db_.s.execute(stmt).fetchall()
     while True:
-        res = db.db_.s.execute(stmt).fetchmany(size=3)
+        res = db.db_.s.execute(stmt).fetchmany(size=5)
         for r in res:
             x = dict(r)
             d = D.parse_obj(x)
@@ -152,4 +146,3 @@ def worker():
 
 if __name__ == '__main__':
     worker()
-    # db.titles.update({'id': 91593, 'uploaded': True}, ['id'])
