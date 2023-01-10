@@ -8,9 +8,9 @@ import html as html_
 import mwparserfromhell as mwp
 
 import db
-from get_parsed_html import get_html
-from html2wiki import LibRu
-from parser_html_to_wiki import *
+from converter_html_to_wiki.get_parsed_html import get_html
+from converter_html_to_wiki.html2wiki import LibRu
+from converter_html_to_wiki.parser_html_to_wiki import *
 import make_work_wikipages
 
 # convert_pages_to_db_with_pandoc_on_several_threads()

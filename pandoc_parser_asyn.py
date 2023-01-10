@@ -13,6 +13,7 @@ import multiprocessing
 import socket
 import sqlalchemy.exc
 from sqlalchemy.sql import or_
+from sqlalchemy.future import select
 from pathlib import Path
 from typing import Optional, Union, Tuple, List
 from pydantic import BaseModel, ValidationError, Field, validator, root_validator, Extra
@@ -22,10 +23,10 @@ import mwparserfromhell as mwp
 import pypandoc
 from bs4 import BeautifulSoup, Tag
 
-import db_schema as db
-from get_parsed_html import get_html, get_content_from_html, get_content_from_html_soup
-from html2wiki import LibRu
-from parser_html_to_wiki import *
+from db import *
+from converter_html_to_wiki.get_parsed_html import get_html, get_content_from_html, get_content_from_html_soup
+from converter_html_to_wiki.html2wiki import LibRu
+from converter_html_to_wiki.parser_html_to_wiki import *
 
 os.environ.setdefault('PYPANDOC_PANDOC', '/home/vladislav/anaconda3/envs/web/bin/pandoc')
 
@@ -182,8 +183,8 @@ async def convert_page(h: H):
     # text = categorization(out2, parser.soup)
 
     # <span> to <ref>
-    text = re.sub(r'\[(ref (?:name|follow)="[^"]+"(?: ?\\)?)\]', r'<\1>', text)
-    text = re.sub(r'\[(/ref)\]', r'<\1>', text)
+    text = re.sub(r'\[(ref (?:name|follow)="[^"]+"(?: ?\\)?)]', r'<\1>', text)
+    text = re.sub(r'\[(/ref)]', r'<\1>', text)
     if '<ref' in text:
         text = '%s\n\n== Примечания ==\n{{примечания}}\n' % text
 
@@ -195,7 +196,7 @@ async def convert_page(h: H):
     text = re.sub(r'^==+\s*\*\s*\*\s*\*\s*==+$', r'{{***}}', text, flags=re.MULTILINE)
     text = re.sub(r'^<center>\s*-{5}\s*</center>$', r'{{---|width=6em}}', text, flags=re.MULTILINE)
     text = re.sub(r'^<center>\s*-{6,}\s*</center>$', r'{{---|width=10em}}', text, flags=re.MULTILINE)
-    text = re.sub(r'<center>\s*(\[\[File:[^]]+?)\]\]\s*</center>', r'\1|center]]', text)
+    text = re.sub(r'<center>\s*(\[\[File:[^]]+?)]]\s*</center>', r'\1|center]]', text)
 
     text = re.sub(r'([Α-Ω]+)', r'{{lang|grc|\1}}', text, flags=re.I)
 
@@ -299,7 +300,7 @@ class AsyncWorker:
         # self.offset_base = self.chunk_size * i_core  # стартовые значения offset для запроса из БД
         # self.offset = 0
 
-    def start(self):
+    def run(self):
         loop = asyncio.get_event_loop()
         loop.run_until_complete(self.do_tasks(loop))
         # finished, unfinished = loop.run_until_complete(self.asynchronous(loop))
@@ -308,11 +309,11 @@ class AsyncWorker:
         loop.close()
 
     async def do_tasks(self, loop):
-        loop = 0
+        c = 0
         while True:
-            offset = self.i_core * self.chunk_size + loop * 1000
+            offset = self.i_core * self.chunk_size + c * 1000
             rows = await self.feeder(offset)
-            loop += 1
+            c += 1
             if not rows:
                 break
             tasks = [self.work_row(r) for r in rows]
@@ -322,7 +323,7 @@ class AsyncWorker:
         return process_images(h)
 
     async def feeder(self, offset) -> Optional[List[dict]]:
-        ta = db.AllTables
+        ta = AllTables
         # for i in range(1, NUM_CORES + 1):
         print(f'{offset=} {self.i_core=}')
 
@@ -332,7 +333,7 @@ class AsyncWorker:
         # # .outerjoin(db.Images)
         # stmt = stmt.filter(db.WSpages_w_img_err.pagename.isnot(None))
 
-        stmt = db.db_.s.query(ta).filter(
+        stmt = select(ta).where(
             # db.AllTables.tid > 98000,
             # ta.tid == 90475,
             # ta.tid == 94709,
@@ -341,8 +342,10 @@ class AsyncWorker:
             # db.Titles.title_ws_as_uploaded == 'Цезарь Каскабель (Верн)',
             # or_(ta.time_update.isnot(None), ta.wiki_converted == 0),
             ta.uploaded_text == 0,
-            ta.wiki_converted == 0,
-            ta.do_upload == 1,
+            ta.html.isnot(None),
+            ta.wiki.is_(None),
+            # ta.wiki_converted == 0,
+            ta.do_upload == 0,
             # ta.wikified.like('%StrangeNoGraphicData%'),
             # or_(
             #     db.Htmls.wiki.not_like('%:' + db.Images.name_ws + '|%'),
@@ -350,15 +353,13 @@ class AsyncWorker:
             # ),
             # html={'like': '%%'},  # wiki2={'like': '%[[File:%'},
         ).limit(self.chunk_size).offset(offset)  # .limit(10)  # .order_by(db.Titles.id.desc())
-        res = stmt.all()
-        res = [{c.name: getattr(r, c.name) for c in r.__table__.columns} for r in res]
-
-        rows = [r for r in res]
+        res_ = dbs.execute(stmt).scalars().fetchall()
+        rows = [{c.name: getattr(r, c.name) for c in r.__table__.columns} for r in res_]
         return rows
 
     async def _feeder(self, offset) -> Optional[List[dict]]:
         # t = db.all_tables
-        t = db.htmls
+        t = htmls
         cols = t.table.c
         # self.offset = self.chunk * self.i_core
         # offset = self.i_core * self.chunk_size
@@ -414,7 +415,7 @@ class AsyncWorker:
 
     async def db_save(self, h) -> None:
         rows = [img.dict() for img in h.images]
-        with db.db as tx1:
+        with dbd as tx1:
             tx1['images'].delete(tid=h.tid)
             for row in rows:
                 tx1['images'].insert_ignore(row, ['urn'])
@@ -442,7 +443,7 @@ class AsyncWorker:
 def start(i_core: int):
     w = AsyncWorker(i_core)
     # w.PAGES_PER_CORE = num_pages
-    w.start()
+    w.run()
 
 
 def main():

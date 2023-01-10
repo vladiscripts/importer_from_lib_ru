@@ -76,9 +76,9 @@ def by_uploaded_list():
     limit = 100
     while True:
         stmt = db.db_.s.query(db.Titles) \
-            .outerjoin(db.WSpages_w_img_err, db.WSpages_w_img_err.pagename == db.Titles.title_ws_as_uploaded_2)
+            .outerjoin(db.WSpages_w_img_err, db.WSpages_w_img_err.pagename == db.Titles.title_ws_as_uploaded)
         stmt = stmt.filter(
-            db.Titles.title_ws_as_uploaded_2.is_(None),
+            db.Titles.title_ws_as_uploaded.is_(None),
         )
         stmt = stmt.offset(offset).limit(limit)
         res = stmt.all()

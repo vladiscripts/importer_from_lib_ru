@@ -16,8 +16,9 @@ import re
 from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 import html as html_
 
+from db import *
 from pandoc_parser import convert_page
-from get_parsed_html import get_content_from_html, get_content_from_html_soup, re_spaces_many_no_newlines
+from .get_parsed_html import get_content_from_html, get_content_from_html_soup, re_spaces_many_no_newlines
 from pandoc_parser import Image
 
 
@@ -75,6 +76,7 @@ class D(BaseModel):
             v = None if v == '' else v
         return v
 
+
 class CommonData:
     categories_cached = []
     authors_cache_db = []
@@ -108,7 +110,8 @@ def get_li_block(desc_block, d) -> Optional[tuple]:
     #     for _ in ul.find_all(text=lambda x: isinstance(x, NavigableString) and 'Оставить комментарий' in x):
     ul = desc_block.find_all('ul')[0]
     lis = ul.find_all(lambda e: e.name == 'li' and
-                                not [s for s in ('Оставить комментарий', 'Обновлено:', 'Комментарии:') if s in e.text.strip()])
+                                not [s for s in ('Оставить комментарий', 'Обновлено:', 'Комментарии:') if
+                                     s in e.text.strip()])
     if len(lis) not in [3, 4]:
         raise RuntimeError(f'tid: {d.tid}, длинна <li> описания не равна 5-6')
     return lis
@@ -178,7 +181,7 @@ def parse_author(author_line, d) -> D:
                 d.author = d.name_WS
                 break
             else:
-                db_a = db.authors.find_one(slug=href_slug)
+                db_a = dbd.authors.find_one(slug=href_slug)
                 if db_a:
                     d.author = d.name_WS
                     break
@@ -325,9 +328,9 @@ def parse(d):
 def db_add_text_data(d, upsert=False):
     row = d.dict(include={'tid', 'author', 'translator', 'year', 'desc', 'author_tag', 'year_tag', 'annotation_tag'})
     if upsert:
-        db.desc.upsert(row, ['tid'], ensure=True)
+        dbd.desc.upsert(row, ['tid'], ensure=True)
     else:
-        db.desc.insert(row, ensure=True)
+        dbd.desc.insert(row, ensure=True)
 
 
 def db_add_categories(d):
@@ -341,23 +344,23 @@ def db_add_categories(d):
         else:
             # добавить новую категорию сайта в БД
             # print('to db insert', d.tid)
-            tn = db.texts_categories_names
+            tn = dbd.texts_categories_names
             tn.insert(dc.dict(), ensure=True)
             # print('to db find_one', d.tid)
             cid = tn.find_one(slug=dc.slug_author)['id']
             categories_cached.append(Category(cid=cid, slug=dc.slug_author, name=dc.name))
         categories_to_add.append({'tid': d.tid, 'category_id': c.cid})
 
-    tc = db.texts_categories
+    tc = dbd.texts_categories
     tc.delete(tid=d.tid)
     # tc.insert_many(categories_to_add, ensure=True)
-    db.db.begin()
+    dbd.begin()
     try:
         for r in categories_to_add:
             tc.insert(r, ensure=True)
-        db.db.commit()
+        dbd.commit()
     except:
-        db.db.rollback()
+        dbd.rollback()
 
 
 # def db_add_images_urls(d):
@@ -376,7 +379,7 @@ def main_one_thread():
     categories_cached = [Category.parse_obj(r) for r in db.texts_categories_names.find()]
 
     print('find db for rows to work, initial treades')
-    t = db.all_tables
+    t = dbd.all_tables
     cols = t.table.c
     print('1')
     while True:
@@ -407,13 +410,13 @@ def main():
 
     # categories_cached = [(r['id'], r['slug'], r['name']) for r in db.texts_categories_names.find()]
     # categories_cached = [CategoryCached(cid=r['id'], slug=r['slug'], name=r['name']) for r in db.texts_categories_names.find()]
-    CommonData.categories_cached = [Category.parse_obj(r) for r in db.texts_categories_names.find()]
+    CommonData.categories_cached = [Category.parse_obj(r) for r in dbd.texts_categories_names.find()]
     CommonData.authors_cache_db = [AuthorsCacheDB(slug=r['slug'], name_WS=r['name_WS']) for r in
-                                   db.authors.find()]
+                                   dbd.authors.find()]
 
     def db_fill_pool():
-        ta = db.all_tables.table
-        tc = db.texts_categories.table
+        ta = dbd.all_tables.table
+        tc = dbd.texts_categories.table
 
         # is_cats = {r['tid'] for r in db.texts_categories.find()}
 
@@ -427,7 +430,7 @@ def main():
                   f'FROM {ta.name} LEFT JOIN {tc.name} ON {ta.c.tid}={tc.c.tid} WHERE {tc.c.tid} IS NULL ' \
                   f'AND {ta.c.title} IS NOT NULL AND {ta.c.html} IS NOT NULL ' \
                   f'LIMIT {q.maxsize} OFFSET {offset};'  # f'LIMIT 100;'
-            rows = db.db.query(stm)
+            rows = dbd.query(stm)
             pool = [D.parse_obj(r) for r in rows]
             offset += q.maxsize
             if not pool:
@@ -438,7 +441,7 @@ def main():
                 q.put(d)
 
     def db_fill_pool_():
-        t = db.db.get_table('all_cat_join')
+        t = dbd.get_table('all_cat_join')
         # t = db.all_tables
         ta = t.table
 
@@ -514,7 +517,7 @@ def main():
     # for tid in [5643]:
     # for r in db.htmls.find(db.htmls.table.c.wiki.is_not(None)):
     # for r in db1['all_tables'].find(author=None):  # другое db.connection если используется однопоточное SQLite
-    t = db.all_tables
+    t = dbd.all_tables
     cols = t.table.c
 
     # self.d = D(tid=r['tid'], html=r['html'] )

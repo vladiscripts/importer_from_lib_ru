@@ -8,8 +8,8 @@ from bs4 import BeautifulSoup, Comment, NavigableString
 import html as html_
 
 # from db import *
-from get_parsed_html import get_html
-from parser_html_to_wiki import *
+from .get_parsed_html import get_html
+from .parser_html_to_wiki import *
 
 
 class LibRu(HtmltoWikiBase):

@@ -21,7 +21,7 @@ import re
 from bs4 import BeautifulSoup, Comment
 import mwparserfromhell as mwp
 
-import db_schema as db
+import db.schema as db
 from lib_ru.items import *
 
 

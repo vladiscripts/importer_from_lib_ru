@@ -1,8 +1,10 @@
 # !/usr/bin/env pypy
+import chromedriver_autoinstaller
 from selenium import webdriver
 import requestium
 import chromedriver_binary  # Adds chromedriver binary to path
 import sqlalchemy as sa
+from sqlalchemy import func, or_
 from sqlalchemy_utils.functions import database_exists, create_database
 from sqlalchemy.orm import sessionmaker, relationship, scoped_session, Query
 import dataset
@@ -19,8 +21,8 @@ from urllib.parse import quote_plus
 import pypandoc
 from pydantic import BaseModel, ValidationError, Field, validator, root_validator, Extra, dataclasses
 
-import db_schema as db
-
+import db.schema as db
+from db import *
 
 class SelenuimSession:
     """ If you get the error:
@@ -32,6 +34,7 @@ class SelenuimSession:
     headless = True
 
     def __init__(self):
+        chromedriver_autoinstaller.install()
         options = webdriver.ChromeOptions()
         options.add_argument('--start-maximized')
         options.add_argument('--window-size=1200,1000')
@@ -102,7 +105,7 @@ def main():
             db.Htmls.wiki,
             db.Desc.desc.label('text_desc')
         ).select_from(db.Titles).join(db.Htmls).join(db.Wiki).outerjoin(db.Desc) \
-            .outerjoin(db.WSlistpages_uploaded, db.Titles.title_ws_as_uploaded_2 == db.WSlistpages_uploaded.pagename)
+            .outerjoin(db.WSlistpages_uploaded, db.Titles.title_ws_as_uploaded == db.WSlistpages_uploaded.pagename)
         stmt = stmt.filter(
             db.Htmls.wiki_converted == 1,
             db.Htmls.is_wikified == 0,
@@ -128,7 +131,7 @@ def main():
             # db.Htmls.wiki_differ_wiki2 == 1,
             db.Htmls.wiki_converted == 1,
             # db.Htmls.is_wikified != 1,
-            db.Htmls.is_wikified.is_(False),
+            or_(db.Htmls.is_wikified.is_(False), db.Htmls.is_wikified.is_(None)),
             # db.Htmls.tid > 147000,
             db.Htmls.wiki.is_not(None)
         ).limit(chunk).offset(offset)
@@ -140,10 +143,11 @@ def main():
         while True:
             stmt = feeder_statement(chunk_size, offset)
             # res = stmt.all()
-            res = db.db_.conn.execute(stmt).fetchall()
+            res = dbs.execute(stmt).fetchall()
             for r in res:
                 q.put(dict(r))
             if len(res) < chunk_size:
+                q.put(None)
                 break
             offset += chunk_size
 
@@ -152,6 +156,8 @@ def main():
         try:
             while True:
                 r = q.get()
+                if r is None:
+                    break
                 print(r['tid'])
                 d = D(tid=r['tid'],
                       text=scraper.wikify(r['wiki']),
@@ -166,11 +172,11 @@ def main():
             scraper.s.driver.quit()
 
     def db_save():
-        while True:
+        while not db_q.all_tasks_done:
             d = db_q.get()
-            print('updated', d.tid)
+            print('updating', d.tid)
 
-            db.db.begin()
+            dbd.begin()
             try:
                 x = {'tid': d.tid, 'text': d.text, 'desc': d.desc, 'is_new_text_differed': 0}
                 if m := db.wiki.find_one(tid=d.tid):
@@ -183,13 +189,11 @@ def main():
                     db.wiki.insert(x, ['tid'])
 
                 db.htmls.update({'tid': d.tid, 'is_wikified': 1}, ['tid'])
-                db.db.commit()
+                dbd.commit()
             except Exception as e:
                 print(d.tid, 'rollback', e)
-                db.db.rollback()
+                dbd.rollback()
             db_q.task_done()
-
-        db_q.join()
 
     print('find db for rows to work, initial threads')
     # threading.Thread(target=db_save, name='db_save', daemon=True).start()
@@ -210,19 +214,17 @@ def main():
     with ThreadPoolExecutor(q.maxsize) as exec, \
             ThreadPoolExecutor(thread_name_prefix='db_save') as exec_db_save, \
             ThreadPoolExecutor(thread_name_prefix='feeder') as exec_feeder:
-        futures = [exec.submit(worker) for i in range(q.maxsize)]
-        futures += [
+        futures = [exec.submit(worker) for i in range(q.maxsize)] + [
             exec_feeder.submit(feeder),
-            exec_db_save.submit(db_save)
-        ]
+            exec_db_save.submit(db_save)]
         # results_db_save = exec_feeder.submit(feeder())
         # results_db_save = exec_db_save.submit(db_save)
         # results_workers = exec.submit(worker)
         for future in concurrent.futures.as_completed(futures):
             print(future.result())
 
-    # q.join()
-    # db_q.join()
+    q.join()
+    db_q.join()
 
 
 if __name__ == '__main__':

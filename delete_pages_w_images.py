@@ -36,7 +36,9 @@ def delete_images_of_page(pagename, tid):
 
 
 def delete_page(pagename, tid):
-    cmd_list = delete_base_args + [f'-page:{pagename}', '-summary:автоимпорт с az.lib.ru: нарушение АП']
+    # cmd_list = delete_base_args + [f'-page:{pagename}', '-summary:автоимпорт с az.lib.ru: нарушение АП']
+    cmd_list = delete_base_args + [f'-page:{pagename}', '-summary:копия [[Юный разведчик (Баден-Пауэлл)/1916 (ДО)]]']
+    print(pagename)
     print(pagename)
     run_command(cmd_list)
     # print(stdout, stderr=output)
@@ -44,7 +46,7 @@ def delete_page(pagename, tid):
 
 def delete_page_w_images(pagename, tid=None):
     if not tid:
-        r = db.titles.find_one(title_ws_as_uploaded=pagename)
+        r = db.titles.find_one(title_ws_as_uploaded2=pagename)
         if not r:
             print('page was not found')
             return

@@ -12,7 +12,7 @@ import pywikibot as pwb
 import sqlalchemy as sa
 from sqlalchemy.sql import or_
 
-import db_schema as db
+from db import *
 import make_work_wikipages
 from db_set_titles_ws import Level
 
@@ -23,8 +23,8 @@ year_limited = 2022 - 70 - 1
 date_of_start_bot_uploading = dateutil.parser.parse('2022-03-26')
 datetime_now = datetime.datetime.now()
 
-ta = db.AllTables
-tt = db.Titles
+ta = AllTables
+tt = Titles
 
 
 class D(BaseModel):
@@ -53,13 +53,21 @@ def posting_page(page: pwb.Page, text_new: str, summary: str):
     else:
         return True
 
+def check_moved_target(page):
+    # переименованная страница без редиректа
+    try:
+        moved_target = page.moved_target()
+        return moved_target
+    except Exception as e:
+        pass
+
 
 def process_page(d: make_work_wikipages.X, update_only=False, update_text_content_only=False):
     tid = d.tid
     if update_only:
-        pagename = d.title_ws_as_uploaded_2
+        pagename = d.title_ws_as_uploaded
     else:
-        pagename = d.title_ws_as_uploaded or d.title_ws_as_uploaded_2 or d.title_ws_proposed
+        pagename = d.title_ws_as_uploaded or d.title_ws_as_uploaded or d.title_ws_proposed
 
     if pagename is None:
         print('pagename is None')
@@ -85,9 +93,9 @@ def process_page(d: make_work_wikipages.X, update_only=False, update_text_conten
 
             created_before_0326 = page.oldest_revision['timestamp'] < date_of_start_bot_uploading
             mybot_creater = page.oldest_revision['user'] == 'TextworkerBot'
-            db.titles.update({
+            dbd.titles.update({
                 'id': tid,
-                'created_before_0326': created_before_0326,
+                # 'created_before_0326': created_before_0326,
                 'mybot_creater': mybot_creater
             }, ['id'])
             if created_before_0326 and not mybot_creater:
@@ -108,7 +116,7 @@ def process_page(d: make_work_wikipages.X, update_only=False, update_text_conten
             #     print()
 
             if page.latest_revision['user'] not in ['TextworkerBot', 'ButkoBot', 'Lozman']:
-                db.titles.update({'id': tid,
+                dbd.titles.update({'id': tid,
                                   'uploaded': True,
                                   # 'updated_as_named_proposed': True,
                                   'title_ws_as_uploaded': pagename,
@@ -120,7 +128,7 @@ def process_page(d: make_work_wikipages.X, update_only=False, update_text_conten
 
             else:
                 if ok := posting_page(page, text_new, summary):
-                    db.titles.update({'id': tid,
+                    dbd.titles.update({'id': tid,
                                       'uploaded': True,
                                       'updated_as_named_proposed': True,
                                       'title_ws_as_uploaded': pagename,
@@ -139,32 +147,35 @@ def process_page(d: make_work_wikipages.X, update_only=False, update_text_conten
             # else:
             #     pass
         else:
-            print(f'{pagename=}')
-            if ok := posting_page(page, d.wikipage_text, summary):
-                db.titles.update({'id': tid,
-                                  'uploaded': True,
-                                  'title_ws_as_uploaded': pagename,
-                                  'title_ws_as_uploaded_2': pagename,
-                                  'time_update': datetime_now,
-                                  'title_ws_proposed_identical_level': Level.identical,
-                                  'created_before_0326': False,
-                                  'mybot_creater': True},
-                                 ['id'])
-                print(f'{tid=}, {d.year_dead=}')
-                return True
+            while not page.exists():
+                if target_page := check_moved_target(page):
+                    # переименованная страница без редиректа todo
+                    continue
+                elif page.has_deleted_revisions():
+                    # страница удалялась и нет перенаправлений
+                    break
+            else:
+                print(f'{pagename=}')
+                if ok := posting_page(page, d.wikipage_text, summary):
+                    dbd.titles.update({'id': tid,
+                                      'uploaded': True,
+                                      'title_ws_as_uploaded': pagename,
+                                      'time_update': datetime_now,
+                                      'title_ws_proposed_identical_level': Level.identical,
+                                      'created_before_0326': False,
+                                      'mybot_creater': True},
+                                     ['id'])
+                    print(f'{tid=}, {d.year_dead=}')
+                    return True
 
 
 def make_wikipages_to_db():
     offset = 0
     limit = 100
     while True:
-        # res = db.db_.connect.query(f'''
-        #         SELECT * FROM all_tables a
-        #             left join ws_pages_w_img_err u on u.pagename = a.title_ws_as_uploaded_2
-        #         where u.pagename is not null and a.time_update is null
-        #         limit {limit} offset {offset};''')
 
-        stmt = sa.select(db.AllTables).where(
+        stmt = sa.select(AllTables).where(
+            ta.banned == 1,
             ta.do_upload == 1,
             # do_update_as_named_proposed=True,
             ta.uploaded_text == 0,
@@ -178,23 +189,23 @@ def make_wikipages_to_db():
             # updated_as_named_proposed=False,
             # is_same_title_in_ws_already=False,
             # ta.wikified.isnot(None),
-            # cola.title_ws_proposed.isnot(None),
-            # ta.title_ws_as_uploaded_2.isnot(None),
-            # cola.title_ws_as_uploaded.isnot(None),
+            ta.title_ws_proposed.isnot(None),
+            # ta.title_ws_as_uploaded.isnot(None),
             # ta.time_update.is_(None),
             # or_(ta.time_update.is_(None), ta.time_update < dateutil.parser.parse("2022-05-01 11:30")),
             # ta.is_lastedit_by_user == 1,
-            # ta.text_len < 2048,
+            or_(ta.text_len < 2048, ta.text_len.is_(None)),
             or_(ta.year_dead <= year_limited, ta.year <= 1917),
+            # ta.title_ws_proposed.like('Будущая порода людей%'),
             # ta.oo == 1,
             # cola.wiki.like('%.da.ru%'),
             # cola.wikified.not_like('%feb-web.ru%'),
             # col.lang.isnot(None),
         ).limit(limit).offset(offset)
-        res = db.db_.conn.execute(stmt).fetchall()
+        res = dbs.execute(stmt).scalars().fetchall()
 
         for r in res:
-            d = make_work_wikipages.X.parse_obj(r)
+            d = make_work_wikipages.X.from_orm(r)
             d.make_wikipage()
             process_page(d, update_only=False)
             # process_page(d, update_only=True, update_text_content_only=True)

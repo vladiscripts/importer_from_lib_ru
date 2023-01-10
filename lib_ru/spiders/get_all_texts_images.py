@@ -1,7 +1,7 @@
 from scrapy import Request
 from scrapy.spiders import CrawlSpider
 
-import db_schema as db
+import db.schema as db
 from lib_ru.items import ImageText
 
 

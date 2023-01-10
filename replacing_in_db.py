@@ -2,7 +2,7 @@ import re
 from pathlib import Path
 import sqlalchemy as sa
 
-import db_schema as db
+import db.schema as db
 
 text = """
 ДОНЦЫ, УРАЛЬЦЫ, КУБАНЦЫ, ТЕРЦЫ</center>
@@ -51,12 +51,12 @@ for r in db.db_.conn.execute(stmt).all():
 # переименование страниц: создание списка для pywikibot
 pages = []
 tt = db.Titles
-stmt = sa.select(tt.title_ws_as_uploaded_2, tt.title_ws_proposed).where(
-    tt.title != tt.title_old, tt.uploaded == 1, tt.renamed_manually == 0, tt.title_ws_as_uploaded_2 != tt.title_ws_proposed
+stmt = sa.select(tt.title_ws_as_uploaded, tt.title_ws_proposed).where(
+    tt.title != tt.title_old, tt.uploaded == 1, tt.renamed_manually == 0, tt.title_ws_as_uploaded != tt.title_ws_proposed
 ) # .limit(10)
 res = db.db_.s.execute(stmt).fetchall()
 for r in res:
-    pages.append(tt.title_ws_as_uploaded_2)
+    pages.append(tt.title_ws_as_uploaded)
     pages.append(tt.title_ws_proposed)
 txt = '\n'.join(pages)
 f = Path('to_rename.lst').write_text(txt, encoding='utf-8')
@@ -65,7 +65,7 @@ f = Path('to_rename.lst').write_text(txt, encoding='utf-8')
 # переименование страниц в {{отексте}} для pywikibot
 pages = []
 tt = db.Titles
-stmt = sa.select(tt.title_ws_as_uploaded_2, tt.title_old, tt.title).where(
+stmt = sa.select(tt.title_ws_as_uploaded, tt.title_old, tt.title).where(
     tt.title != tt.title_old, tt.uploaded == 1, tt.renamed_manually == 0, # tt.title_ws_as_uploaded_2 != tt.title_ws_proposed
 ) # .limit(10)
 res = db.db_.s.execute(stmt).fetchall()
@@ -73,7 +73,7 @@ for r in res:
     s = 'python3 $PWBPATH/pwb.py replace -family:wikisource -lang:ru -page:"%s" ' \
         '"НАЗВАНИЕ              = %s\\n" ' \
         '"НАЗВАНИЕ              = %s\\n"' \
-        % (r.title_ws_as_uploaded_2.replace('"','\\"'), r.title_old.replace('"',r'\"'), r.title.replace('"',r'\"'))
+        % (r.title_ws_as_uploaded.replace('"', '\\"'), r.title_old.replace('"', r'\"'), r.title.replace('"', r'\"'))
     pages.append(s)
 txt = '\n'.join(pages)
 f = Path('to_replace.sh').write_text(txt, encoding='utf-8')

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from dataclasses import dataclass
+import datetime as dt
 import time
 import re
 from urllib.parse import urlsplit
@@ -10,11 +11,11 @@ from pydantic import BaseModel, ValidationError, Field, validator, root_validato
 import html as html_
 import mwparserfromhell as mwp
 
-import db_schema as db
-from get_parsed_html import get_html
-from html2wiki import LibRu
-from parser_html_to_wiki import *
-from parse_works_metadata_from_htmls_to_db import Category, CategoryText, D
+from db import *
+from converter_html_to_wiki.get_parsed_html import get_html
+from converter_html_to_wiki.html2wiki import LibRu
+from converter_html_to_wiki.parser_html_to_wiki import *
+from converter_html_to_wiki.parse_works_metadata_from_htmls_to_db import Category, CategoryText, D
 
 categories_cached: list = None
 categories_authors_cached: list = None
@@ -30,9 +31,9 @@ class CategoriesbyAuthors(BaseModel):
 
 
 class CommonData:
-    categories_cached = [Category.parse_obj(r) for r in db.texts_categories_names.find()]
-    categories_authors_cached = [CategoriesbyAuthors.parse_obj(r) for r in db.authors_categories.find()]
-    cid_translation = db.texts_categories_names.find_one(name='Переводы')
+    categories_cached = [Category.parse_obj(r) for r in dbd.texts_categories_names.find()]
+    categories_authors_cached = [CategoriesbyAuthors.parse_obj(r) for r in dbd.authors_categories.find()]
+    cid_translation = dbd.texts_categories_names.find_one(name='Переводы')
 
 
 class X(D):
@@ -40,7 +41,7 @@ class X(D):
     oo: bool
     title_ws_proposed: Optional[str]
     title_ws_as_uploaded: Optional[str]
-    title_ws_as_uploaded_2: Optional[str]
+    renamed_manually: Optional[bool]
     author_tag: Optional[str]
     lang: Optional[str]
     year_dead: Optional[int]
@@ -50,9 +51,14 @@ class X(D):
     desc: Optional[str] = Field(..., alias='text_desc_wikified')
     categories: list = []
     wikipage_text: str = ''
+    family_parsed: Optional[str]
+    time_update: Optional[dt.datetime]
+    is_author: Optional[bool]
+    is_already_this_title_in_ws: Optional[bool]
 
     class Config:
         extra = Extra.allow
+        orm_mode = True
 
     def make_wikipage(self):
         self.clean_desc()
@@ -80,7 +86,7 @@ class X(D):
             for a in re.findall(r'(<a[^>]*?href="[^"]+".*?>.*?</a>)', v):
                 m = re.search(r'<a[^>]*?href="([^"]+)".*?>(.*?)</a>', a)
                 href_slug = urlsplit(m.group(1)).path.rstrip('/')
-                db_a = db.authors.find_one(slug=href_slug)
+                db_a = dbd.authors.find_one(slug=href_slug)
                 if db_a:
                     a_new = f"[[{db_a['name_WS']}|{m.group(2)}]]"
                 else:
@@ -90,17 +96,17 @@ class X(D):
 
     def categorization(self, C):
         re_headers_check = re.compile(r'<center>(Глава.+?|II.?|\d+.?)</center>', flags=re.I)
-        re_refs_check = re.compile(r'(<sup>|\[\d|\{.+?\})', flags=re.I)
+        re_refs_check = re.compile(r'(<sup>|\[\d|\{.+?\})')
 
         conditions = [
             (re_headers_check.search(self.wikified), 'Страницы с не вики-заголовками'),
             (re_refs_check.search(self.wikified), 'Страницы с не вики-сносками или с тегом sup'),
             ('[#' in self.wikified, 'Страницы с внутренними ссылками по анкорам'),
-            ('pre' in self.wikified, 'Страницы с тегами pre'),
+            ('<pre>' in self.wikified, 'Страницы с тегами pre'),
             ('<ref' in self.wikified, 'Страницы со сносками'),
             ('http' in self.wikified, 'Страницы с внешними ссылками'),
             ('ru.wikisource.org/wiki' in self.wikified, 'Страницы с внешними ссылками на Викитеку'),
-            # ([e for pre in soup.find_all('pre') for e in pre.find_all('ref')], 'Теги ref внутри pre'),
+            # ([e for pre in soup.find_all('<pre>') for e in pre.find_all('ref')], 'Теги ref внутри pre'),
         ]
 
         if self.desc:
@@ -124,7 +130,7 @@ class X(D):
 
         cats = [name for cond, name in conditions if cond]
 
-        has_cat_translation = db.texts_categories.find_one(category_id=C.cid_translation, tid=self.tid)
+        has_cat_translation = dbd.texts_categories.find_one(category_id=C.cid_translation, tid=self.tid)
         if not self.translator and has_cat_translation:
             cats.append(f'Не указан переводчик и есть категория перевода')
         if self.translator and not has_cat_translation:
@@ -135,7 +141,7 @@ class X(D):
                 if author_.group(1) not in (self.litarea, self.name):  # todo: name or self.name_WS?
                     cats.append('Возможна ошибка указания автора')
 
-        if self.title_ws_as_uploaded_2 and '/Версия ' in self.title_ws_as_uploaded_2:
+        if self.title_ws_as_uploaded and '/Версия ' in self.title_ws_as_uploaded:
             cats.append('Есть одноимённая страница не имевшаяся ранее, проверить на дубль и переименовать')
 
         if not self.is_author:
@@ -149,7 +155,7 @@ class X(D):
 
         cats = [f'Импорт/lib.ru/{c}' for c in cats]
 
-        cats_from_db = [c.name_ws for r in db.texts_categories.find(tid=self.tid) for c in C.categories_cached
+        cats_from_db = [c.name_ws for r in dbd.texts_categories.find(tid=self.tid) for c in C.categories_cached
                         if c.cid == r['category_id']]
         cats.extend(cats_from_db)
 
@@ -221,7 +227,7 @@ def make_wikipage(r) -> str:
 
 # test
 def make_wikipages_to_db():
-    ta = db.all_tables
+    ta = dbd.all_tables
     col = ta.table.c
     res = ta.find(col.wikified.isnot(None), col.title_ws.isnot(None), col.year <= 2022 - 4 - 71, do_upload=True,
                   _limit=10)

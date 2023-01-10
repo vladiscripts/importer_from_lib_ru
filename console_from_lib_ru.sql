@@ -168,21 +168,24 @@ update titles set do_upload = 1;
 
 update titles set title_ws = null;
 
-update all_tables set do_upload = 0 where  do_upload=1 and
--- title_ws like '%Библиографическая справка%'
--- wiki like '%: Энциклопедический словарь Брокгауза%'
--- wiki like '%{{right|\'\'Энциклопедический словарь Брокгауза%'
--- wiki like '%/brokgauz/index.html \'\'Энциклопедический словарь Брокгауза%'
--- wiki like '% \'\'Энциклопедический словарь Брокгауза%'
--- wiki like '%html Энциклопедический словарь Брокгауза%'
--- wiki like '%Текст издания: Энциклопедический словарь Брокгауза%'
--- wiki like '%center>\'\'Энциклопедический словарь Брокгауза%'
--- wiki like '%vehi.net/brokgauz/%'
--- wiki like '%feb-web.ru/feb/kle%'
--- wiki like '%feb-web.ru/feb/slt%'
--- wiki like '%feb-web.ru/feb/litenc%'
--- wiki like '%Литературная энциклопедия:%'
-wiki like '%/ ЭНИ "Словарь псевдонимов%'
+update titles t
+    left join htmls h on t.id = h.tid
+set banned = 2
+where  -- do_upload = 1
+#   and title_ws like '%Библиографическая справка%'
+  html like '%: Энциклопедический словарь Брокгауза%'
+  and html like '%{{right|\'\'Энциклопедический словарь Брокгауза%'
+  and html like '%/brokgauz/index.html \'\'Энциклопедический словарь Брокгауза%'
+  and html like '% \'\'Энциклопедический словарь Брокгауза%'
+  and html like '%html Энциклопедический словарь Брокгауза%'
+  and html like '%Текст издания: Энциклопедический словарь Брокгауза%'
+  and html like '%center>\'\'Энциклопедический словарь Брокгауза%'
+  and html like '%vehi.net/brokgauz/%'
+  and html like '%feb-web.ru/feb/kle%'
+  and html like '%feb-web.ru/feb/slt%'
+  and html like '%feb-web.ru/feb/litenc%'
+  and html like '%Литературная энциклопедия:%'
+  and html like '%/ ЭНИ "Словарь псевдонимов%'
 ;
 #                                       author_id=11273
 

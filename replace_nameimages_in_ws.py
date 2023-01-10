@@ -2,12 +2,13 @@
 import os
 import shlex, subprocess
 from pathlib import Path
+import re
 import requests
 from urllib.parse import urlparse, parse_qs, parse_qsl, unquote, quote, urlsplit, urlunsplit
 import argparse
 import pywikibot as pwb
 
-import db_schema as db
+from db import *
 
 base_args = ['python3', '/home/vladislav/usr/pwb/core/pwb.py', 'replace', '-family:wikisource', '-lang:ru',
              '-always', '-summary:images renamed']
@@ -47,16 +48,16 @@ def replace_on_page(tid, pagename, replaces_pairs):
             print('changing:', pagename)
             page.text = text_new
             page.save(summary='images renamed')
-            db.titles.update({'id': tid, 'img_renamed': True}, ['id'])
+            titles.update({'id': tid, 'img_renamed': True}, ['id'])
         elif is_updated:
-            db.titles.update({'id': tid, 'img_renamed': True}, ['id'])
+            titles.update({'id': tid, 'img_renamed': True}, ['id'])
 
 
 def get_replaces(r):
     replaces_pairs_raw = []
 
-    stmt = db.db_.s.query(db.Images).filter(
-        db.Images.tid == r.cid,
+    stmt = dbs.query(Images).filter(
+        Images.tid == r.cid,
     )
     res = stmt.all()
     for r in res:
@@ -72,9 +73,9 @@ def get_replaces(r):
 
 
 def run():
-    stmt = db.db_.s.query(db.Titles).join(db.Htmls).join(db.Images).filter(
-        db.Titles.uploaded == 1,
-        db.Htmls.wiki_differ_wiki2 == 1,
+    stmt = dbs.query(Titles).join(Htmls).join(Images).filter(
+        Titles.uploaded == 1,
+        Htmls.wiki_differ_wiki2 == 1,
         # db.Titles.id == 149520,
         # db.Titles.title == 'Маленький Мук',
     )  # .order_by(db.Titles.id.desc())
@@ -87,13 +88,13 @@ def run():
 
 
 def replace_img_names_in_db():
-    stmt = db.db_.s.query(db.Titles, db.Images, db.Htmls, db.Wiki).join(db.Htmls).join(db.Wiki).join(db.Images).filter(
-        db.Titles.do_upload == 1,
+    stmt = dbs.query(Titles, Images, Htmls, Wiki).join(Htmls).join(Wiki).join(Images).filter(
+        Titles.do_upload == 1,
         # db.Htmls.wiki_differ_wiki2 == 1,
-        db.Titles.id == 89713,
+        Titles.id == 89713,
         # db.Titles.title == 'Маленький Мук',
-        db.Htmls.wiki.not_like(':' + db.Images.name_ws + '|'),
-        db.Wiki.text.not_like(':' + db.Images.name_ws + '|'),
+        Htmls.wiki.not_like(':' + Images.name_ws + '|'),
+        Wiki.text.not_like(':' + Images.name_ws + '|'),
     )  # .order_by(db.Titles.id.desc())
     res = stmt.all()
     # l = len(res)

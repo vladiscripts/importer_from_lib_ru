@@ -119,10 +119,10 @@ class A(BaseModel):
     def categorization(self, C):
         # conditions = [
         #     ('[#' in text, 'Страницы с внутренними ссылками по анкорам'),
-        #     ('pre' in text, 'Страницы с тегами pre'),
+        #     ('<pre>' in text, 'Страницы с тегами pre'),
         #     ('<ref' in text, 'Страницы со сносками'),
         #     ('http' in text, 'Страницы с внешними ссылками'),
-        #     ([e for pre in soup.find_all('pre') for e in pre.find_all('ref')], 'Теги ref внутри pre'),
+        #     ([e for pre in soup.find_all('<pre>') for e in pre.find_all('ref')], 'Теги ref внутри pre'),
         # ]
         # cats = [f'[[Категория:Импорт/lib.ru/{name}]]' for cond, name in conditions if cond]
 

@@ -117,7 +117,7 @@ def feeder(offset=0) -> Optional[List[dict]]:
 
 def db_save(h) -> None:
     rows = [img.dict() for img in h.images]
-    with db.db as tx1:
+    with db.dbd as tx1:
         tx1['images'].delete(tid=h.tid)
         for row in rows:
             tx1['images'].insert_ignore(row, ['urn'])

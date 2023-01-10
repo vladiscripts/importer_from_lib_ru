@@ -19,10 +19,10 @@ import mwparserfromhell as mwp
 import pypandoc
 from bs4 import BeautifulSoup, Tag
 
-import db_schema as db
-from get_parsed_html import get_html, get_content_from_html, get_content_from_html_soup
-from html2wiki import LibRu
-from parser_html_to_wiki import *
+from db.schema import *
+from converter_html_to_wiki.get_parsed_html import get_html, get_content_from_html, get_content_from_html_soup
+from converter_html_to_wiki.html2wiki import LibRu
+from converter_html_to_wiki.parser_html_to_wiki import *
 
 
 class Image(BaseModel):
@@ -267,7 +267,7 @@ def main():
 
     def feeder() -> Optional[List[dict]]:
         # t = db.all_tables
-        t = db.htmls
+        t = htmls
         cols = t.table.c
 
         chunk_size = 50
@@ -276,10 +276,11 @@ def main():
 
         while True:
             res = t.find(
-                cols.html.is_not(None),
+                do_upload=0,
+                # cols.html.is_not(None),
                 # cols.wiki.is_(None),
                 # cols.wiki2.is_(None),
-                wiki_converted=1,
+                # wiki_converted=1,
                 # tid=88278,
                 # tid=87499,
                 # html={'like': '%%'},  # wiki2={'like': '%[[File:%'},
@@ -300,7 +301,7 @@ def main():
 
     def db_save(h) -> None:
         rows = [img.dict() for img in h.images]
-        with db.db as tx1:
+        with dbd as tx1:
             tx1['images'].delete(tid=h.tid)
             for row in rows:
                 tx1['images'].insert_ignore(row, ['tid', 'name_ws'])

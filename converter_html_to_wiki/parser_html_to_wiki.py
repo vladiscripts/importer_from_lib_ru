@@ -4,7 +4,7 @@ import re
 from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 import html as html_
 
-from get_parsed_html import get_html
+from .get_parsed_html import get_html
 
 tags_mapping = {
     'i': "''",

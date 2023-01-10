@@ -28,7 +28,6 @@ class DB:
         if use_orm:
             Base.metadata.create_all(self.engine)
 
-        self.connect = dataset.connect(str(self.engine.url), engine_kwargs=dict(echo=self.engine.echo))
         #   #pool_size=10, max_overflow=20
         # self.table_input = self.connect[table_input_name]
         # self.table_output = self.connect[table_output_name]

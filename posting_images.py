@@ -119,7 +119,7 @@ while True:
     for r in res:
         iid = r.Images.cid
         text_url = r.Titles.text_url
-        text_pagename = r.Titles.title_ws_as_uploaded_2
+        text_pagename = r.Titles.title_ws_as_uploaded
         filename = r.Images.name_ws
         pagename = f'File:{r.Images.name_ws}'
         if not Path(filename).exists():

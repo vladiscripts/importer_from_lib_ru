@@ -5,18 +5,20 @@ import os, io
 from pathlib import Path
 import dataset
 # import sqlalchemy
-from sqlalchemy import create_engine
 from sqlalchemy import Column, Integer, BigInteger, SmallInteger, String, Text, Date, Numeric, Boolean, DateTime
 from sqlalchemy import ForeignKey, ForeignKeyConstraint, MetaData, Table
-from sqlalchemy.dialects.mysql import MEDIUMTEXT, LONGTEXT
+from sqlalchemy.dialects.mysql import MEDIUMTEXT, LONGTEXT, TINYINT
 from sqlalchemy.schema import Index, CreateSchema
 from sqlalchemy.dialects.mysql import insert
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, scoped_session, Query
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy_utils.functions import database_exists, create_database
+from sqlalchemy_utils import create_view
+from sqlalchemy.future import select
+from sqlalchemy import func
 
-from db_connector import *
+from db.connector import *
 
 # naming_convention = {
 #     "ix": "ix_%(column_0_label)s",
@@ -35,7 +37,7 @@ naming_convention = {
 
 db_name = 'lib_ru'
 db_ = DB(db_name, use_os_env=True, use_orm=False)
-session = db_.s
+session = dbs = db_.s
 
 metadata = MetaData(bind=db_.engine, naming_convention=naming_convention)
 Base = declarative_base(metadata=metadata)
@@ -64,7 +66,8 @@ class Authors(Base):
     image_filename_wiki = Column(Text)
     filename = Column(Text)
     pid_ws = Column(Integer, unique=True)
-    author_subcategory_posted = Column(Boolean, default=0, nullable=False)
+    author_subcategory_posted = Column(TINYINT, default=0, nullable=False)
+    author_subcategory_tpl_posted = Column(TINYINT, default=0, nullable=False)
 
 
 class Titles(Base):
@@ -76,29 +79,29 @@ class Titles(Base):
                        nullable=False, index=True)
     year = Column(Integer)
     size = Column(Integer)
-    title_old = Column(Text)
+    # title_old = Column(Text)
     title = Column(String(500))
     desc = Column(Text)
     text_length = Column(Integer)
     text_url = Column(String(500), unique=True)
     oo = Column(Boolean, default=0)
     is_already_this_title_in_ws = Column(Boolean, default=0)
+    banned = Column(SmallInteger)
     do_upload = Column(Boolean, default=0, nullable=False, index=True)
     uploaded = Column(Boolean, default=0, nullable=False, index=True)
     do_update_as_named_proposed = Column(Boolean, default=0, nullable=False, index=True)
     updated_as_named_proposed = Column(Boolean, default=0, nullable=False, index=True)
-    created_before_0326 = Column(Boolean, index=True)
+    # created_before_0326 = Column(Boolean, index=True)
     mybot_creater = Column(Boolean, index=True)
     img_renamed = Column(Boolean)
     title_ws_proposed = Column(String(255), unique=True)
     title_ws_as_uploaded = Column(String(255), unique=True)
-    title_ws_as_uploaded_2 = Column(String(255), unique=True)
     title_ws_proposed_identical_level = Column(SmallInteger, index=True)
     renamed_manually = Column(Boolean)
     do_update_2 = Column(Boolean)
     is_lastedit_by_user = Column(Boolean)
     time_update = Column(DateTime)
-    pageauthor_subcategory_added = Column(Boolean, default=0, nullable=False)
+    pageauthor_subcategory_added = Column(TINYINT, default=0, nullable=False)
 
 
 Index('titles_author_id_slug_uindex', Titles.author_id, Titles.slug, unique=True)
@@ -212,6 +215,12 @@ class WSpages_w_images_errors(Base):
                       nullable=False, unique=True)
 
 
+class BannedCodes(Base):
+    __tablename__ = 'banned_codes'
+    __comment__ = 'codes for titles that do not upload'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    desc = Column(String(400), nullable=False, unique=True)
+
 # all_tables = Table(
 #     'all_tables', metadata,
 #     id = Column( Integer, primary_key=True, autoincrement=True),
@@ -221,8 +230,7 @@ class WSpages_w_images_errors(Base):
 #     text_lang_by_author = Column( String(100)),
 # )
 
-from sqlalchemy_utils import create_view
-from sqlalchemy import select, func
+
 
 # view
 a = Authors
@@ -231,7 +239,7 @@ h = Htmls
 d = Desc
 w = Wiki
 ac = AuthorsCategories
-view_stmt = db_.s.query(
+view_stmt = dbs.query(
     t.slug.label('slug_text'),
     t.text_url,
     t.id.label('tid'),
@@ -240,13 +248,14 @@ view_stmt = db_.s.query(
     t.size,
     w.text_len,
     t.title,
-    t.title_old,
+    # t.title_old,
     t.desc.label('text_desc_raw'),
     d.desc.label('text_desc'),
     w.desc.label('text_desc_wikified'),
     t.oo,
     t.is_already_this_title_in_ws,
     a.do_upload.label('do_upload_author'),
+    t.banned,
     t.do_upload,
     t.do_update_2,
     t.uploaded.label('uploaded_text'),
@@ -254,9 +263,8 @@ view_stmt = db_.s.query(
     t.updated_as_named_proposed,
     t.title_ws_proposed,
     t.title_ws_as_uploaded,
-    t.title_ws_as_uploaded_2,
     t.title_ws_proposed_identical_level,
-    t.created_before_0326,
+    # t.created_before_0326,
     t.mybot_creater,
     t.renamed_manually,
     t.is_lastedit_by_user,
@@ -348,22 +356,3 @@ from authors a
 
 
 """
-
-# db_host, db_user, db_pw = os.getenv('DB_HOST'),  os.getenv('DB_USER'),  os.getenv('DB_PASSWORD')
-# db_url = f'mysql+pymysql://{db_user}:{db_pw}@{db_host}/lib_ru'
-# db = dataset.connect(db_url, engine_kwargs=dict(echo=False))
-
-db = db_.connect
-
-authors = db['authors']
-authors_with_cat = db['authors_with_cat']
-authors_categories = db['authors_categories']
-titles = db['titles']
-texts_categories_names = db.create_table('texts_categories_names')
-texts_categories = db.create_table('texts_categories')
-htmls = db.create_table('htmls')
-desc = db.create_table('desc_')
-wiki = db.create_table('wikified')
-images = db.create_table('images')
-wikisource_listpages = db.create_table('ws_listpages_20220321')
-all_tables = db['all_tables']

@@ -10,7 +10,7 @@ import threading, queue
 import scrapy
 from scrapy.pipelines.images import ImagesPipeline
 
-import db_schema as db
+import db.schema as db
 from lib_ru.items import *
 
 lock = threading.RLock()
